@@ -1,0 +1,403 @@
+/********** Template CSS **********/
+:root {
+    --primary: #126E1B;
+    --light: #F3F6F9;
+    --dark: #191C24;
+}
+
+
+.imagen {
+    width: 130px;
+    height: 100px;
+    padding-left: 30px;
+}
+
+/*** Spinner ***/
+#spinner {
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity .5s ease-out, visibility 0s linear .5s;
+    z-index: 99999;
+}
+
+#spinner.show {
+    transition: opacity .5s ease-out, visibility 0s linear 0s;
+    visibility: visible;
+    opacity: 1;
+}
+
+
+/*** Button ***/
+.btn {
+    transition: .5s;
+}
+
+.btn.btn-primary {
+    color: #FFFFFF;
+}
+
+.btn-square {
+    width: 38px;
+    height: 38px;
+}
+
+.btn-sm-square {
+    width: 32px;
+    height: 32px;
+}
+
+.btn-lg-square {
+    width: 48px;
+    height: 48px;
+}
+
+.btn-square,
+.btn-sm-square,
+.btn-lg-square {
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: normal;
+    border-radius: 50px;
+}
+
+
+/*** Layout ***/
+
+/* --- Estilos por defecto (Sidebar Abierta) --- */
+.verde .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 350px;
+    /* Ancho fijo para la barra lateral */
+    height: 100vh;
+    overflow-y: auto;
+    background: var(--light);
+    transition: 0.5s;
+    z-index: 999;
+}
+
+.verde .content {
+    /* En un contenedor flex, el content ya no necesita margin-left, 
+    ya que el sidebar está en position: fixed o el layout se ajusta.
+    Usamos flex-grow: 1 para que ocupe el resto del espacio en su padre. */
+    flex-grow: 1;
+    margin-left: 550px;
+    /* Necesario para empujar el contenido más allá del sidebar Fijo */
+    min-height: 100vh;
+    background: #FFFFFF;
+    transition: 0.5s;
+}
+
+/* --- Media Query: Pantallas Grandes (Escritorio) --- */
+@media (min-width: 992px) {
+
+    .verde .sidebar {
+        margin-left: 0;
+    }
+
+    .verde .sidebar.open {
+        margin-left: -350px; /* Esto oculta el sidebar */
+    }
+
+    .verde .content {
+        width: calc(100% - 350px);
+        margin-left: 350px; /* Se asegura de que el contenido comience después del sidebar */
+    }
+
+    .verde .content.open {
+        width: 100%;
+        margin-left: 0; /* ESTO ES CRUCIAL: Elimina el margen para que ocupe todo */
+    }
+}
+
+/* --- Media Query: Pantallas Pequeñas (Móvil) --- */
+@media (max-width: 991.98px) {
+    .verde .sidebar {
+        /* Mantiene el sidebar oculto por defecto */
+        margin-left: -250px;
+    }
+
+    .verde .sidebar.open {
+        /* Hace visible el sidebar al abrirlo */
+        margin-left: 0;
+    }
+
+    .verde .content {
+        /* El contenido siempre ocupa el 100% y no necesita margin-left */
+        width: 100%;
+        margin-left: 0;
+    }
+}
+
+/*** Navbar ***/
+.verde .sidebar .navbar .navbar-nav .nav-link {
+    padding: 7px 20px;
+    color: var(--dark);
+    font-weight: 500;
+    border-left: 3px solid var(--light);
+    border-radius: 0 30px 30px 0;
+    outline: none;
+}
+
+.verde .sidebar-toggler i {
+    color: #126E1B;
+}
+
+.verde .sidebar .navbar .navbar-nav .nav-link:hover,
+.verde .sidebar .navbar .navbar-nav .nav-link.active {
+    color: #CE1616;
+    background: #FFFFFF;
+    border-color: var(--primary);
+}
+
+.verde .inicio:hover {
+    color: #CE1616;
+}
+
+.verde .sidebar .navbar .navbar-nav .nav-link i {
+    width: 40px;
+    height: 40px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #FFFFFF;
+    border-radius: 40px;
+}
+
+.verde .sidebar .navbar .navbar-nav .nav-link:hover i,
+.verde .sidebar .navbar .navbar-nav .nav-link.active i {
+    background: var(--light);
+    border-color: var(--primary);
+}
+
+.verde .sidebar .navbar .dropdown-toggle::after {
+    position: absolute;
+    top: 15px;
+    right: 15px;
+    border: none;
+    content: "\f107";
+    font-family: "Font Awesome 5 Free";
+    font-weight: 900;
+    transition: .5s;
+}
+
+.verde .sidebar .navbar .dropdown-toggle[aria-expanded=true]::after {
+    transform: rotate(-180deg);
+}
+
+.verde .dropdown-menu-end[data-bs-popper] {
+    right: 0;
+    left: auto;
+}
+
+.verde .dropdown-menu[data-bs-popper] {
+    top: 100%;
+    left: 0;
+    margin-top: .125rem;
+}
+
+.verde .dropdown-menu-end {
+    --bs-position: end;
+}
+
+.verde .dropdown-menu {
+    position: absolute;
+    z-index: 1000;
+    display: none;
+    min-width: 10rem;
+    padding: .5rem 0;
+    margin: 0;
+    font-size: 1rem;
+    color: #757575;
+    text-align: left;
+    list-style: none;
+    background-color: #fff;
+    background-clip: padding-box;
+    border: 1px solid rgba(0, 0, 0, 0.15);
+    border-radius: 5px;
+}
+
+.verde .dropdown-item {
+    display: block;
+    width: 100%;
+    padding: .25rem 1rem;
+    clear: both;
+    font-weight: 400;
+    color: #212529;
+    text-align: inherit;
+    white-space: nowrap;
+    background-color: transparent;
+    border: 0;
+}
+
+.verde .sidebar .navbar .dropdown-item {
+    padding-left: 25px;
+    border-radius: 0 30px 30px 0;
+}
+
+
+.verde .dropdown-item:active {
+    color: #fff;
+    text-decoration: none;
+    background-color: #126E1B;
+}
+
+.verde .dropdown-item:hover,
+.verde .dropdown-item:focus {
+    color: #FFFFFF;
+    background-color: #CE1616;
+}
+
+.verde .content .navbar .navbar-nav .nav-link {
+    margin-left: 25px;
+    padding: 12px 0;
+    color: var(--dark);
+    outline: none;
+}
+
+.verde .content .navbar .navbar-nav .nav-link:hover,
+.verde .content .navbar .navbar-nav .nav-link.active {
+    color: var(--primary);
+}
+
+.verde .content .navbar .sidebar-toggler,
+.verde .content .navbar .navbar-nav .nav-link i {
+    width: 40px;
+    height: 40px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #FFFFFF;
+    border-radius: 40px;
+}
+
+.verde .content .navbar .dropdown-toggle::after {
+    margin-left: 6px;
+    vertical-align: middle;
+    border: none;
+    content: "\f107";
+    font-family: "Font Awesome 5 Free";
+    font-weight: 900;
+    transition: .5s;
+}
+
+.verde .content .navbar .dropdown-toggle[aria-expanded=true]::after {
+    transform: rotate(-180deg);
+}
+
+@media (max-width: 575.98px) {
+    .verde .content .navbar .navbar-nav .nav-link {
+        margin-left: 15px;
+    }
+}
+
+.verde .table-responsive {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.verde .table-responsive table {
+    position: relative;
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.verde .table-responsive thead {
+    position: sticky;
+    top: 0;
+    background-color: #fff;
+    z-index: 2;
+}
+
+.verde .table-responsive th,
+.verde .table-responsive td {
+    padding: 10px;
+    text-align: left;
+    border-bottom: 1px solid #ddd;
+}
+
+.verde .table-responsive td {
+    background-color: #f9f9f9;
+    color: #191C24;
+    transition: background-color 0.3s ease;
+}
+
+.verde .table-responsive tbody tr:hover td {
+    background-color: #126E1B !important;
+    color: white;
+}
+
+.verde .table-responsive td:hover {
+    cursor: pointer;
+}
+
+/*** Date Picker ***/
+.bootstrap-datetimepicker-widget.bottom {
+    top: auto !important;
+}
+
+.bootstrap-datetimepicker-widget .table * {
+    border-bottom-width: 0px;
+}
+
+.bootstrap-datetimepicker-widget .table th {
+    font-weight: 500;
+}
+
+.bootstrap-datetimepicker-widget.dropdown-menu {
+    padding: 10px;
+    border-radius: 2px;
+}
+
+.bootstrap-datetimepicker-widget table td.active,
+.bootstrap-datetimepicker-widget table td.active:hover {
+    background: var(--primary);
+}
+
+.bootstrap-datetimepicker-widget table td.today::before {
+    border-bottom-color: var(--primary);
+}
+
+
+/*** Testimonial ***/
+.progress .progress-bar {
+    width: 0px;
+    transition: 2s;
+}
+
+
+/*** Testimonial ***/
+.testimonial-carousel .owl-dots {
+    margin-top: 24px;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+}
+
+.testimonial-carousel .owl-dot {
+    position: relative;
+    display: inline-block;
+    margin: 0 5px;
+    width: 15px;
+    height: 15px;
+    border: 5px solid var(--primary);
+    border-radius: 15px;
+    transition: .5s;
+}
+
+.testimonial-carousel .owl-dot.active {
+    background: var(--dark);
+    border-color: var(--primary);
+}
+
+.pagination {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 10px;
+    margin-top: 15px;
+}

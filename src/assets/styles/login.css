@@ -1,0 +1,174 @@
+/* ========================================
+Estilos de Fondo y Animación 3D
+========================================
+*/
+body {
+    /* Fondo con degradado muy claro */
+    background-image:
+        linear-gradient(rgb(255, 255, 255), rgb(255, 249, 249));
+    background-size: cover, 50% 100%, 50% 100%;
+    /* Ajuste del tamaño */
+    background-position: left, center top, right bottom;
+    /* Posicionamiento de las imágenes */
+    background-repeat: no-repeat;
+    height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #333;
+    /* Cambiado a negro para contraste con fondo claro */
+    perspective: 1000px;
+    /* Para el efecto 3D */
+    transition: background-position 0.5s ease-in-out;
+}
+
+/* Efecto al pasar el ratón (opcional) */
+body:hover {
+    background-position: left, center bottom, right top;
+}
+
+.login-card {
+    /* Fondo semitransparente para legibilidad */
+    background-color: rgba(255, 255, 255, 0.85);
+    /* Efecto de desenfoque constante (ELIMINADO) */
+
+    border-radius: 15px;
+    padding: 40px;
+    /* Sombra con un toque del color principal */
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2), 0 0 15px rgba(18, 110, 27, 0.5);
+    max-width: 400px;
+    width: 100%;
+    /* Animación 3D sutil */
+    transform-style: preserve-3d;
+    transform: rotateY(0deg);
+    transition: transform 0.5s ease-in-out;
+}
+
+
+
+.login-card h2 {
+    font-weight: 700;
+    margin-bottom: 30px;
+    /* Color de texto oscuro para contraste con fondo de tarjeta claro */
+    color: #126E1B;
+    text-shadow: none;
+    /* Quitamos la sombra ya que el fondo de la tarjeta es claro */
+}
+
+.form-control {
+    background-color: rgba(0, 0, 0, 0.05);
+    /* Fondo de input muy suave */
+    border: none;
+    color: #000000;
+    /* Texto de input oscuro */
+    border-bottom: 2px solid #126E1B;
+    /* Color principal */
+    transition: all 0.3s;
+}
+
+.form-control::placeholder {
+    color: rgba(51, 51, 51, 0.6);
+    /* Placeholder oscuro */
+}
+
+.form-control:focus {
+    background-color: rgba(18, 110, 27, 0.1);
+    box-shadow: none;
+    border-color: #126E1B;
+    /* Color principal al enfocar */
+}
+
+.btn-primary {
+    background-color: #126E1B;
+    border-color: #126E1B;
+    font-weight: bold;
+    transition: background-color 0.3s;
+}
+
+.btn-primary:hover {
+    background-color: #0d4f13;
+    /* Verde un poco más oscuro al pasar el ratón */
+    border-color: #0d4f13;
+    transform: translateZ(20px);
+    /* Efecto 3D en el botón */
+}
+
+/* ========================================
+Iconografía de Reconocimiento Facial 
+========================================
+*/
+.face-icon {
+    display: block;
+    margin: 0 auto 20px;
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    background: rgba(18, 110, 27, 0.1);
+    /* Fondo del icono con un poco de color principal */
+    border: 3px solid #126E1B;
+    position: relative;
+    overflow: hidden;
+}
+
+/* Simulación de escáner facial */
+.face-icon::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 5px;
+    background: #126E1B;
+    box-shadow: 0 0 10px #126E1B;
+    animation: scan 2s infinite alternate;
+}
+
+/* Estilo del contenedor */
+.input-group-icon {
+    position: relative;
+}
+
+/* Estilo para el icono (el ojo) */
+.input-group-icon .toggle-password {
+    position: absolute;
+    top: 50%;
+    /* Centra verticalmente */
+    right: 15px;
+    /* Lo coloca a 15px del borde derecho del input */
+    cursor: pointer;
+    color: #126E1B;
+    /* Color principal para que se destaque */
+    -webkit-transform: translateY(-50%);
+    -ms-transform: translateY(-50%);
+    transform: translateY(-50%);
+    z-index: 10;
+    /* Asegura que esté por encima del input */
+}
+
+/* Ajuste opcional para el input: añade padding a la derecha para que el texto no quede debajo del icono */
+.input-group-icon .form-control {
+    padding-right: 40px;
+    /* Suficiente espacio para que el icono quepa */
+}
+
+@keyframes scan {
+    0% {
+        transform: translateY(0);
+    }
+
+    100% {
+        transform: translateY(75px);
+    }
+}
+
+/* Media Query para mejorar la visualización en pantallas pequeñas */
+@media (max-width: 768px) {
+    body {
+        background-size: cover;
+        background-position: center;
+    }
+
+    .login-card {
+        margin: 20px;
+    }
+}

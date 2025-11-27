@@ -1,0 +1,392 @@
+/*** Spinner Start ***/
+#spinner {
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity .8s ease-out, visibility 0s linear .5s;
+  z-index: 99999;
+}
+
+#spinner.show {
+  transition: opacity .8s ease-out, visibility 0s linear .0s;
+  visibility: visible;
+  opacity: 1;
+}
+
+/*** Spinner End ***/
+
+.back-to-top {
+  position: fixed;
+  right: 30px;
+  bottom: 30px;
+  display: flex;
+  width: 45px;
+  height: 45px;
+  align-items: center;
+  justify-content: center;
+  transition: 0.5s;
+  z-index: 99;
+}
+
+/*** Button Start ***/
+.btn {
+  font-weight: 600;
+  transition: .5s;
+}
+
+.btn-square {
+  width: 32px;
+  height: 32px;
+}
+
+.btn-sm-square {
+  width: 34px;
+  height: 34px;
+}
+
+.btn-md-square {
+  width: 44px;
+  height: 44px;
+}
+
+.btn-lg-square {
+  width: 56px;
+  height: 56px;
+}
+
+.btn-square,
+.btn-sm-square,
+.btn-md-square,
+.btn-lg-square {
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: normal;
+}
+
+.btn-primary-outline-0 {
+  color: var(--bs-white) !important;
+  border: 1px solid var(--bs-primary);
+}
+
+.btn-light-outline-0 {
+  color: var(--bs-primary) !important;
+  border: 1px solid var(--bs-light);
+}
+
+.btn-primary-outline-0:hover {
+  background: var(--bs-secondary) !important;
+  color: var(--bs-white) !important;
+  border: 1px solid var(--bs-primary);
+}
+
+.btn-light-outline-0:hover {
+  background: var(--bs-primary) !important;
+  color: var(--bs-white) !important;
+  border: 1px solid var(--bs-secondary);
+}
+
+.img-border {
+  border-color: var(--bs-secondary);
+  border-style: double;
+}
+
+.display-1,
+.display-2,
+.display-3,
+.display-4,
+.display-5,
+.display-6 {
+
+  font-weight: 700;
+}
+
+/*** Topbar Start ***/
+.fixed-top {
+  transition: 0.5s;
+  background: var(--bs-white);
+  border: 0;
+}
+
+.topbar {
+  border-radius: 230px 100px;
+}
+
+.topbar .top-info,
+.topbar .top-link {
+  font-size: 15px;
+  letter-spacing: 1px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* Enlaces */
+.topbar a {
+  color: white;
+  text-decoration: none;
+  transition: color 0.3s ease;
+}
+
+.topbar a:hover small {
+  color: var(--bs-secondary) !important;
+}
+
+.topbar a:hover i {
+  color: var(--bs-primary) !important;
+}
+
+/* --- Responsive ajustes --- */
+@media (max-width: 991.98px) {
+  .topbar {
+    border-radius: 0;
+    text-align: center;
+    padding: 10px 15px;
+  }
+
+  .topbar .top-info,
+  .topbar .top-link {
+    justify-content: center;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  .topbar small {
+    display: block;
+    margin-bottom: 5px;
+  }
+
+  .topbar .top-link {
+    margin-top: 8px;
+  }
+}
+/*** Topbar End ***/
+
+/*** Navbar Start ***/
+.sticky-top {
+  transition: 0.1s;
+  background: var(--bs-white);
+}
+
+
+.mennu .navbar .navbar-nav .nav-link {
+  padding: 10px 15px;
+
+  font-weight: 600;
+  font-size: 16px;
+  transition: .1s;
+}
+
+.mennu .navbar .navbar-nav .nav-link:hover,
+.mennu .navbar .navbar-nav .nav-link.active,
+.sticky-top.bg-white .navbar .navbar-nav .nav-link:hover,
+.sticky-top.bg-white .navbar .navbar-nav .nav-link.active {
+  color: var(--bs-secondary);
+}
+
+@media (min-width: 1200px) {
+  .mennu .navbar .navbar-collapse .border-top {
+      border-top: none !important;
+  }
+}
+
+/*** Navbar End ***/
+.text-secondary1 {
+  color: #ffffff !important;
+}
+
+/*** Carousel Start ***/
+.carousel-item {
+  position: relative;
+  min-height: 100vh
+}
+
+.carousel-item img {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.carousel-item .carousel-caption {
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  text-align: center;
+  background: linear-gradient(rgba(0, 0, 0, .4), rgba(0, 0, 0, 0.4));
+  background-size: cover;
+}
+
+
+
+/*** Carousel End ***/
+
+/*** vesitable Start ***/
+div.vesitable{
+  /*background-image: url(@/assets/images/choosing-bg1.jpg);*/
+  background-repeat: no-repeat;
+  background-size: cover;
+  background-color: #126E1B;
+  padding-bottom: 100px;
+  padding: 0px 30px 100px 30px;
+}
+.vesitable .vesitable-item {
+  height: 100%;
+  transition: 0.5s;
+}
+.vesitable .vesitable-item p{
+  text-align: justify;
+}
+
+.vesitable .vesitable-item:hover {
+  box-shadow: 0 0 55px rgba(0, 0, 0, 0.4);
+}
+
+.vesitable .vesitable-item .vesitable-img {
+  overflow: hidden;
+  transition: 0.5s;
+  border-radius: 10px 10px 0 0;
+}
+
+.vesitable .vesitable-item .vesitable-img img {
+  transition: 0.5s;
+}
+
+.vesitable .vesitable-item .vesitable-img img:hover {
+  transform: scale(1.2);
+}
+
+.vesitable .owl-stage {
+  margin: 50px 0;
+  position: relative;
+}
+
+.vesitable .owl-nav .owl-prev {
+  position: absolute;
+  top: -8px;
+  right: 0;
+  color: var(--bs-primary);
+  padding: 5px 25px;
+  border: 1px solid var(--bs-secondary);
+  border-radius: 20px;
+  transition: 0.5s;
+
+}
+
+.vesitable .owl-nav .owl-prev:hover {
+  background: var(--bs-secondary);
+  color: var(--bs-white);
+}
+
+.vesitable .owl-nav .owl-next {
+  position: absolute;
+  top: -8px;
+  right: 88px;
+  color: var(--bs-primary);
+  padding: 5px 25px;
+  border: 1px solid var(--bs-secondary);
+  border-radius: 20px;
+  transition: 0.5s;
+}
+
+.vesitable .owl-nav .owl-next:hover {
+  background: var(--bs-secondary);
+  color: var(--bs-white);
+}
+.border-primary1 {
+  border-color: #c40808 !important;
+}
+/*** vesitable End ***/
+
+
+/*Contacto*/
+.fondonormal{
+  background-color: #126E1B !important;
+  color: #126E1B !important;
+}
+.comentcontac{
+  /*background-image: url(@/assets/images/coming-soon-bg.jpg) !important;*/
+  background-repeat: no-repeat;
+  background-size: cover;
+  background-color: #126E1B !important;
+}
+.contacto1-form {
+  
+  position: relative;
+   
+}
+.contacto1-form .form-control {
+  background: transparent;
+  border-radius: 2px;
+  outline: none;
+  box-shadow: none;
+  font-weight: bold;
+  margin: 16px 0;
+}
+.contacto1-form .form-control:not(textarea) {
+  height: 48px;
+}
+.contacto1-form .form-control:hover, .contacto1-form .form-control:focus {
+  border-color: var(--bs-primary) !important;
+}
+.contacto1-form .submit1-btn {
+  background: var(--bs-primary) !important;
+  border-radius: 50px;
+  color: var(--bs-white);
+  font-weight: bold;
+  border: 0;
+  cursor: pointer;
+  transition: all 0.4s ease;
+}
+.contacto1-form .submit1-btn:hover {
+  background: var(--bs-secondary) !important;
+  color: var(--bs-white);
+}
+
+.contacto1-info {
+  background: var(--bs-primary);
+  border-radius: 0 0 3px 3px;
+  position: relative;
+  bottom: 8px;
+}
+.contacto1-info p, .contacto1-info a {
+  color: #f7f3f3;
+}
+
+.social-links .uil {
+  color: #f7f3f3;
+  font-size: 20px;
+  display: block;
+  margin: 5px 0;
+}
+.social-links .uil:hover {
+  color: var(--bs-secondary) !important;
+}
+@media (max-width: 991px) {
+  
+  .contacto1-form {
+    margin-top: 2em;
+  }
+
+  .contacto1-info {
+    padding: 0 2rem;
+  }
+}
+@media (max-width: 320px) {
+  
+  .contacto1-info {
+    flex-direction: column;
+  }
+
+  .social-links li {
+    display: inline-block;
+    vertical-align: top;
+  }
+}
+
+
