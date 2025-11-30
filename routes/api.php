@@ -6,6 +6,8 @@ use App\Http\Controllers\InformacionPersonalDController;
 use App\Http\Controllers\InformacionPersonalController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\UserController;
+use App\Http\Controllers\CarreraController;
+
 
 /*
 |--------------------------------------------------------------------------
@@ -31,6 +33,9 @@ Route::prefix('biometrico')->group(function () {
         Route::get('logout', [AuthController::class, 'logout'])->name('logout');
         Route::get('getdocentes', [InformacionPersonalDController::class, 'getdocentes']);
         Route::get('estudiantesfoto', [InformacionPersonalController::class, 'estudiantesfoto']);
+        Route::get('carrerasList', [CarreraController::class, 'carrerasconsula']);
+        Route::get('estudiantes-foto-lista', [InformacionPersonalController::class, 'listarEstudiantesConFoto']);
+        Route::get('comparar-foto/{ci}', [InformacionPersonalController::class, 'compararFotos']);
         Route::get('descargarfotosmasiva', [InformacionPersonalController::class, 'descargarFotosMasiva']);
     });
 });

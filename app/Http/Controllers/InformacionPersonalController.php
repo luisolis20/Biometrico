@@ -42,10 +42,122 @@ class InformacionPersonalController extends Controller
         //
     }
 
+    public function compararFotos($ci)
+    {
+        try {
+            // Foto SIAD (local en la BDD)
+            $persona = informacionpersonal::where('CIInfPer', $ci)
+                ->select('fotografia')
+                ->first();
+
+            if (! $persona || empty($persona->fotografia)) {
+                return response()->json([
+                    'different' => true,
+                    'message' => 'No existe foto SIAD',
+                ]);
+            }
+
+            $fotoLocal = $persona->fotografia;
+
+            // Foto HC (externa)
+            $urlExterna = env('API_BOLSA').'/b_e/vin/fotografia/'.$ci;
+
+            $fotoExterna = @file_get_contents($urlExterna);
+
+            if ($fotoExterna === false) {
+                return response()->json([
+                    'different' => true,
+                    'message' => 'No se pudo obtener foto HC',
+                ]);
+            }
+
+            // Comparación rápida: tamaño
+            if (strlen($fotoLocal) !== strlen($fotoExterna)) {
+                return response()->json([
+                    'different' => true,
+                ]);
+            }
+
+            // Comparación byte a byte más rápida en PHP
+            if ($fotoLocal !== $fotoExterna) {
+                return response()->json([
+                    'different' => true,
+                ]);
+            }
+
+            // Si llega aquí → son iguales
+            return response()->json([
+                'different' => false,
+            ]);
+
+        } catch (\Throwable $e) {
+            return response()->json([
+                'different' => true,
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function listarEstudiantesConFoto()
+    {
+        try {
+            $carrerasExcluidas = ['056', '122', '124', '197', '206', '601', '602', '603'];
+
+            $sql = '
+                SELECT 
+                    ip.CIInfPer,
+                    ip.NombInfPer,
+                    ip.ApellInfPer,
+                    ip.ApellMatInfPer,
+                    ip.mailPer,
+                    c.NombCarr
+                FROM informacionpersonal ip
+                INNER JOIN ingreso i ON i.CIInfPer = ip.CIInfPer
+                INNER JOIN carrera c ON c.idCarr = i.idcarr
+                INNER JOIN factura f ON f.cedula = ip.CIInfPer
+                WHERE 
+                    f.idper = 125
+                    AND i.idper = (
+                        SELECT MAX(i2.idper)
+                        FROM ingreso i2
+                        INNER JOIN carrera c2 ON c2.idCarr = i2.idcarr
+                        WHERE i2.CIInfPer = ip.CIInfPer
+                          AND c2.idCarr NOT IN ('.implode(',', array_fill(0, count($carrerasExcluidas), '?')).")
+                          AND c2.NombCarr NOT LIKE '%TRABAJO DE INTEGRACIÓN CURRICULAR%'
+                    )
+                    AND c.idCarr NOT IN (".implode(',', array_fill(0, count($carrerasExcluidas), '?')).")
+                    AND c.NombCarr NOT LIKE '%TRABAJO DE INTEGRACIÓN CURRICULAR%'
+                    AND ip.fotografia IS NOT NULL
+                GROUP BY 
+                    ip.CIInfPer,
+                    ip.NombInfPer,
+                    ip.ApellInfPer,
+                    ip.ApellMatInfPer,
+                    ip.mailPer,
+                    c.NombCarr
+            ";
+
+            // Bind parameters dos veces (subquery + query principal)
+            $bindings = array_merge($carrerasExcluidas, $carrerasExcluidas);
+
+            $estudiantes = DB::select($sql, $bindings);
+
+            return response()->json([
+                'message' => 'Estudiantes con fotografía obtenidos correctamente.',
+                'data' => $estudiantes,
+            ], 200);
+
+        } catch (\Throwable $e) {
+            return response()->json([
+                'error' => true,
+                'message' => 'Error al obtener los datos.',
+                'details' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
     public function estudiantesfoto(Request $request)
     {
-        $startTime = microtime(true);
-
         try {
             $perPage = $request->input('per_page', 20);
             $perPage = min($perPage, 50);
@@ -69,8 +181,6 @@ class InformacionPersonalController extends Controller
                 ->join('ingreso', 'ingreso.CIInfPer', '=', 'informacionpersonal.CIInfPer')
                 ->join('carrera', 'carrera.idCarr', '=', 'ingreso.idcarr')
                 ->where('factura.idper', 125)
-                // Usando una función de subconsulta para encontrar el MAX(idper) por estudiante.
-                // Esta es la parte más crítica para el rendimiento.
                 ->whereIn('ingreso.idper', function ($sub) use ($carrerasAExcluir) {
                     $sub->from('ingreso as i2')
                         ->selectRaw('MAX(i2.idper)')
@@ -82,8 +192,7 @@ class InformacionPersonalController extends Controller
                 })
                 ->whereNotIn('carrera.idCarr', $carrerasAExcluir)
                 ->where('carrera.NombCarr', 'NOT LIKE', '%TRABAJO DE INTEGRACIÓN CURRICULAR%')
-                ->whereNotNull('informacionpersonal.fotografia')
-                ->whereRaw('LENGTH(informacionpersonal.fotografia) > 0');
+                ->whereNotNull('informacionpersonal.fotografia');
 
             // ======================================
             // APLICACIÓN DE FILTROS DESDE EL FRONTEND
@@ -116,27 +225,17 @@ class InformacionPersonalController extends Controller
                 'carrera.NombCarr'
             );
 
-            // Ejecución de la consulta con paginación
             $data = $query->paginate($perPage);
 
-            // --------------------------------------------------------------------------------
-            // FIN DE LA MEDICIÓN
-            // --------------------------------------------------------------------------------
-            $endTime = microtime(true);
-            $executionTime = round(($endTime - $startTime) * 1000, 2); // Tiempo en milisegundos
-
             if ($data->isEmpty()) {
-                return response()->json([
-                    'data' => [], 
-                    'message' => 'No se encontraron estudiantes con fotografía',
-                    'execution_time_ms' => $executionTime // Tiempo en respuesta
-                ], 200);
+                return response()->json(['data' => [], 'message' => 'No se encontraron estudiantes con fotografía'], 200);
             }
 
             $data->getCollection()->transform(function ($item) {
                 $attributes = $item->getAttributes();
                 $attributes['hasPhoto'] = true;
 
+                // No need to unset fotografia here, as it's not selected.
                 return $attributes;
             });
 
@@ -148,20 +247,16 @@ class InformacionPersonalController extends Controller
                     'total' => $data->total(),
                     'last_page' => $data->lastPage(),
                 ],
-                'execution_time_ms' => $executionTime // Tiempo en respuesta
+                // Opcional: devolver la lista completa de carreras para el combobox,
+                // si no quieres hacer otra consulta separada.
+                // Para la primera carga (página 1 sin filtros), podrías hacer una consulta
+                // separada eficiente para obtener todas las carreras disponibles en la DB
+                // y enviarla en la respuesta.
             ], 200);
-
         } catch (\Throwable $e) {
-            // --------------------------------------------------------------------------------
-            // La medición también termina aquí en caso de error
-            // --------------------------------------------------------------------------------
-            $endTime = microtime(true);
-            $executionTime = round(($endTime - $startTime) * 1000, 2); // Tiempo en milisegundos
-
             return response()->json([
                 'error' => true,
                 'message' => 'Error interno del servidor: '.$e->getMessage(),
-                'execution_time_ms' => $executionTime // Tiempo en respuesta
             ], 500);
         }
     }
