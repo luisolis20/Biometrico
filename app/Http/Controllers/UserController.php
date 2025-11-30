@@ -15,7 +15,7 @@ class UserController extends Controller
     {
         try {
 
-            $query = User::select('biometric_users.*');
+            $query = User::select('usuario.*');
             if ($request->has('all') && $request->all === 'true') {
                 $data = $query->get();
 
@@ -108,32 +108,7 @@ class UserController extends Controller
      */
     public function update(Request $request, string $id)
     {
-        $res = User::find($id);
-        if (isset($res)) {
-            $res->CIInfPer = $request->CIInfPer;
-            $res->name = $request->name;
-            $res->apellidos = $request->apellidos;
-            $res->email = $request->email;
-            $res->password = md5($request->password);
-            $res->role = $request->role;
-            $res->estado = $request->estado;
-            if ($res->save()) {
-                return response()->json([
-                    'data' => $res,
-                    'mensaje' => "Actualizado con Éxito!!",
-                ]);
-            } else {
-                return response()->json([
-                    'error' => true,
-                    'mensaje' => "Error al Actualizar",
-                ]);
-            }
-        } else {
-            return response()->json([
-                'error' => true,
-                'mensaje' => "El Usuario con id: $id no Existe",
-            ]);
-        }
+       
     }
 
     /**
@@ -141,55 +116,11 @@ class UserController extends Controller
      */
     public function destroy(string $id)
     {
-        $res = User::find($id);
-        if (isset($res)) {
-            $res->estado = 0;
-            $res->save();
-            $data = $res->toArray();
-            if ($data) {
-
-                return response()->json([
-                    'data' => $data,
-                    'mensaje' => "Inhabilitado con Éxito!!",
-                ]);
-            } else {
-                return response()->json([
-                    'data' => $data,
-                    'mensaje' => "El usuario no existe (puede que ya la haya eliminado)",
-                ]);
-            }
-        } else {
-            return response()->json([
-                'error' => true,
-                'mensaje' => "El usuario con id: $id no Existe",
-            ]);
-        }
+        
     }
     public function habilitar(string $id)
     {
-        $res = User::find($id);
-        if (isset($res)) {
-            $res->estado = 1;
-            $res->save();
-            $data = $res->toArray();
-            if ($data) {
-
-                return response()->json([
-                    'data' => $data,
-                    'mensaje' => "Eliminado con Éxito!!",
-                ]);
-            } else {
-                return response()->json([
-                    'data' => $data,
-                    'mensaje' => "El usuario no existe (puede que ya la haya eliminado)",
-                ]);
-            }
-        } else {
-            return response()->json([
-                'error' => true,
-                'mensaje' => "El usuario con id: $id no Existe",
-            ]);
-        }
+       
     }
     /*
     public function login(Request $request)

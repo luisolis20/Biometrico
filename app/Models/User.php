@@ -18,19 +18,32 @@ class User extends Authenticatable implements JWTSubject
      *
      * @var array<int, string>
      */
-    public $table = "biometric_users";
+    public $table = "usuario";
+    protected $primaryKey = 'LoginUsu';
+    public $incrementing = false;
+    protected $keyType = 'string';
     protected $fillable = [
-        'CIInfPer',
-        'name',
-        'apellidos',
+        'LoginUsu',
+        'StatusUsu',
+        'NombUsu',
         'email',
-        'password',
-        'role',
-        'estado',
-        'remember_token',
-        'is_online',
-        'last_logout_at',
-        'last_login_at',
+        'movil',
+        'idperfil',
+        'ciinfper',
+        'idcarr',
+        'id_actdist',
+        'usa_biometrico',
+        'fecha_reg',
+        'fecha_ultimo_acceso',
+        'titulo',
+        'homologar',
+        'crearnota',
+        'posgrado',
+        'idcampus',
+        'inscribir',
+        'equivalencia',
+        'id_grupo',
+        'usuarioreg',
     ];
 
     /**
@@ -38,10 +51,7 @@ class User extends Authenticatable implements JWTSubject
      *
      * @var array<int, string>
      */
-    protected $hidden = [
-        'password',
-        'remember_token',
-    ];
+    
 
     
 
@@ -50,10 +60,7 @@ class User extends Authenticatable implements JWTSubject
      *
      * @var array<string, string>
      */
-    protected $casts = [
-        'email_verified_at' => 'datetime',
-        //'password' => 'hashed',
-    ];
+   
      public function getJWTIdentifier()
     {
         return $this->getKey();

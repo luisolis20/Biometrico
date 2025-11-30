@@ -2,26 +2,18 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\informacionpersonal_D;
 use App\Models\informacionpersonal;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Response;
 use Illuminate\Support\Facades\Storage;
-use ZipArchive;
-use Illuminate\Support\Facades\File;
 
 class InformacionPersonalController extends Controller
 {
     /**
      * Display a listing of the resource.
      */
-    public function index(Request $request)
-    {
-       
-    }
-    
+    public function index(Request $request) {}
 
     /**
      * Store a newly created resource in storage.
@@ -34,7 +26,7 @@ class InformacionPersonalController extends Controller
     public function show(string $id)
     {
         // Aplica paginación al resultado del filtro
-       
+
     }
 
     /**
@@ -49,11 +41,19 @@ class InformacionPersonalController extends Controller
     {
         //
     }
+
     public function estudiantesfoto(Request $request)
     {
+        $startTime = microtime(true);
+
         try {
             $perPage = $request->input('per_page', 20);
             $perPage = min($perPage, 50);
+
+            // --- Nuevos Parámetros de Filtrado ---
+            $searchQuery = $request->input('search_query');
+            $carreraFilter = $request->input('carrera_name');
+            // -------------------------------------
 
             $carrerasAExcluir = ['056', '122', '124', '197', '206', '601', '602', '603'];
 
@@ -65,24 +65,12 @@ class InformacionPersonalController extends Controller
                 'informacionpersonal.mailPer',
                 'carrera.NombCarr'
             )
-
-                // JOIN factura
                 ->join('factura', 'factura.cedula', '=', 'informacionpersonal.CIInfPer')
-
-                // JOIN ingreso
                 ->join('ingreso', 'ingreso.CIInfPer', '=', 'informacionpersonal.CIInfPer')
-
-                // JOIN carrera
                 ->join('carrera', 'carrera.idCarr', '=', 'ingreso.idcarr')
-
-                // -------------------------
-                //   WHERE factura.idper = 125
-                // -------------------------
                 ->where('factura.idper', 125)
-
-                // -------------------------
-                //  FILTRAR EL ÚLTIMO i.idper
-                // -------------------------
+                // Usando una función de subconsulta para encontrar el MAX(idper) por estudiante.
+                // Esta es la parte más crítica para el rendimiento.
                 ->whereIn('ingreso.idper', function ($sub) use ($carrerasAExcluir) {
                     $sub->from('ingreso as i2')
                         ->selectRaw('MAX(i2.idper)')
@@ -92,44 +80,62 @@ class InformacionPersonalController extends Controller
                         ->where('c2.NombCarr', 'NOT LIKE', '%TRABAJO DE INTEGRACIÓN CURRICULAR%')
                         ->groupBy('i2.CIInfPer');
                 })
-
-                // -------------------------
-                //   Excluir carreras
-                // -------------------------
                 ->whereNotIn('carrera.idCarr', $carrerasAExcluir)
                 ->where('carrera.NombCarr', 'NOT LIKE', '%TRABAJO DE INTEGRACIÓN CURRICULAR%')
-
-                // -------------------------
-                //   Foto válida
-                // -------------------------
                 ->whereNotNull('informacionpersonal.fotografia')
-                ->whereRaw('LENGTH(informacionpersonal.fotografia) > 0')
+                ->whereRaw('LENGTH(informacionpersonal.fotografia) > 0');
 
-                // -------------------------
-                //   GROUP BY del SQL
-                // -------------------------
-                ->groupBy(
-                    'informacionpersonal.CIInfPer',
-                    'informacionpersonal.NombInfPer',
-                    'informacionpersonal.ApellInfPer',
-                    'informacionpersonal.ApellMatInfPer',
-                    'informacionpersonal.mailPer',
-                    'carrera.NombCarr'
-                );
+            // ======================================
+            // APLICACIÓN DE FILTROS DESDE EL FRONTEND
+            // ======================================
 
-            $data = $query->paginate($perPage);
-
-            if ($data->isEmpty()) {
-                return response()->json(['data' => [], 'message' => 'No se encontraron estudiantes con fotografía'], 200);
+            // 1. Filtrar por Cédula/Nombres (Búsqueda global)
+            if (! empty($searchQuery)) {
+                $query->where(function ($q) use ($searchQuery) {
+                    $q->where('informacionpersonal.CIInfPer', 'LIKE', "%{$searchQuery}%")
+                        ->orWhere('informacionpersonal.NombInfPer', 'LIKE', "%{$searchQuery}%")
+                        ->orWhere('informacionpersonal.ApellInfPer', 'LIKE', "%{$searchQuery}%")
+                        ->orWhere('informacionpersonal.ApellMatInfPer', 'LIKE', "%{$searchQuery}%");
+                });
             }
 
-            $withPhotos = $request->boolean('withPhotos', true);
+            // 2. Filtrar por Carrera
+            if (! empty($carreraFilter) && $carreraFilter !== 'Todos') {
+                $query->where('carrera.NombCarr', $carreraFilter);
+            }
 
-            $data->getCollection()->transform(function ($item) use ($withPhotos) {
+            // ======================================
+            // AGRUPACIÓN Y PAGINACIÓN
+            // ======================================
+            $query->groupBy(
+                'informacionpersonal.CIInfPer',
+                'informacionpersonal.NombInfPer',
+                'informacionpersonal.ApellInfPer',
+                'informacionpersonal.ApellMatInfPer',
+                'informacionpersonal.mailPer',
+                'carrera.NombCarr'
+            );
+
+            // Ejecución de la consulta con paginación
+            $data = $query->paginate($perPage);
+
+            // --------------------------------------------------------------------------------
+            // FIN DE LA MEDICIÓN
+            // --------------------------------------------------------------------------------
+            $endTime = microtime(true);
+            $executionTime = round(($endTime - $startTime) * 1000, 2); // Tiempo en milisegundos
+
+            if ($data->isEmpty()) {
+                return response()->json([
+                    'data' => [], 
+                    'message' => 'No se encontraron estudiantes con fotografía',
+                    'execution_time_ms' => $executionTime // Tiempo en respuesta
+                ], 200);
+            }
+
+            $data->getCollection()->transform(function ($item) {
                 $attributes = $item->getAttributes();
-
                 $attributes['hasPhoto'] = true;
-                unset($attributes['fotografia']); // NO queremos mandarla
 
                 return $attributes;
             });
@@ -141,15 +147,25 @@ class InformacionPersonalController extends Controller
                     'per_page' => $data->perPage(),
                     'total' => $data->total(),
                     'last_page' => $data->lastPage(),
-                ]
+                ],
+                'execution_time_ms' => $executionTime // Tiempo en respuesta
             ], 200);
+
         } catch (\Throwable $e) {
+            // --------------------------------------------------------------------------------
+            // La medición también termina aquí en caso de error
+            // --------------------------------------------------------------------------------
+            $endTime = microtime(true);
+            $executionTime = round(($endTime - $startTime) * 1000, 2); // Tiempo en milisegundos
+
             return response()->json([
                 'error' => true,
-                'message' => 'Error interno del servidor: ' . $e->getMessage(),
+                'message' => 'Error interno del servidor: '.$e->getMessage(),
+                'execution_time_ms' => $executionTime // Tiempo en respuesta
             ], 500);
         }
     }
+
     public function getFotografia2($ci)
     {
         try {
@@ -159,9 +175,9 @@ class InformacionPersonalController extends Controller
                 ->first();
 
             // 2. Verificar si el usuario existe y si tiene foto
-            if (!$persona || empty($persona->fotografia)) {
+            if (! $persona || empty($persona->fotografia)) {
                 // Devolver una respuesta HTTP 404 (Not Found)
-                return response()->json(['error' => 'Fotografía no encontrada para el CI: ' . $ci], 404);
+                return response()->json(['error' => 'Fotografía no encontrada para el CI: '.$ci], 404);
             }
 
             $fotoBinaria = $persona->fotografia;
@@ -183,12 +199,13 @@ class InformacionPersonalController extends Controller
             // 4. Devolver la imagen como una respuesta binaria (STREAM)
             return Response::make($fotoBinaria, 200)
                 ->header('Content-Type', $mime)
-                ->header('Content-Disposition', 'inline; filename="foto_' . $ci . '"');
+                ->header('Content-Disposition', 'inline; filename="foto_'.$ci.'"');
         } catch (\Throwable $e) {
             // Log::error('Error en getFotografia DController: ' . $e->getMessage()); // Opcional
-            return response()->json(['error' => 'Error al obtener la fotografía: ' . $e->getMessage()], 500);
+            return response()->json(['error' => 'Error al obtener la fotografía: '.$e->getMessage()], 500);
         }
     }
+
     public function descargarFotosMasiva(Request $request)
     {
         // Aumentar el tiempo límite de ejecución para esta petición pesada
@@ -260,6 +277,7 @@ class InformacionPersonalController extends Controller
                     // Asegurar que no hay problemas si el dato es NULL
                     $itemArray['fotografia'] = null;
                 }
+
                 return $itemArray;
             });
 
@@ -272,7 +290,7 @@ class InformacionPersonalController extends Controller
             // En caso de fallo (ej. timeout de BD, memoria), es mejor retornar error 500
             return response()->json([
                 'error' => true,
-                'message' => 'Error interno del servidor en descarga masiva: ' . $e->getMessage(),
+                'message' => 'Error interno del servidor en descarga masiva: '.$e->getMessage(),
             ], 500);
         }
     }

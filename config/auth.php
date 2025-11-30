@@ -15,7 +15,7 @@ return [
 
     'defaults' => [
         'guard' => 'api',
-        'passwords' => 'biometric_users',
+        'passwords' => 'usuario',
     ],
 
     /*
@@ -38,7 +38,7 @@ return [
      'guards' => [
         'api' => [
             'driver' => 'jwt',
-            'provider' => 'biometric_users',
+            'provider' => 'usuario',
         ],
     ],
 
@@ -60,7 +60,7 @@ return [
     */
 
     'providers' => [
-        'biometric_users' => [
+        'usuario' => [
             'driver' => 'eloquent',
             'model' => App\Models\User::class,
         ],
@@ -91,8 +91,8 @@ return [
     */
 
     'passwords' => [
-        'biometric_users' => [
-            'provider' => 'biometric_users',
+        'usuario' => [
+            'provider' => 'usuario',
             'table' => 'password_reset_tokens',
             'expire' => 60,
             'throttle' => 60,
