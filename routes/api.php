@@ -27,6 +27,7 @@ Route::prefix('biometrico')->group(function () {
     Route::apiResource("users", UserController::class);
     Route::post('login', [AuthController::class, 'login']);
     Route::get('fotografia/{ci}', [InformacionPersonalController::class, 'getFotografia2']);
+    Route::get('fotografiadoc/{ci}', [InformacionPersonalDController::class, 'getFotografia']);
     Route::middleware('auth:api')->group(function () {
         Route::get('me', [AuthController::class, 'me']);
         Route::post('refresh', [AuthController::class, 'refresh']);
@@ -36,6 +37,8 @@ Route::prefix('biometrico')->group(function () {
         Route::get('carrerasList', [CarreraController::class, 'carrerasconsula']);
         Route::get('estudiantes-foto-lista', [InformacionPersonalController::class, 'listarEstudiantesConFoto']);
         Route::get('comparar-foto/{ci}', [InformacionPersonalController::class, 'compararFotos']);
+        Route::get('comparar-fotodoc/{ci}', [InformacionPersonalController::class, 'compararFotos']);
         Route::get('descargarfotosmasiva', [InformacionPersonalController::class, 'descargarFotosMasiva']);
+        Route::get('descargarfotosmasivadoc', [InformacionPersonalDController::class, 'descargarFotosMasiva']);
     });
 });

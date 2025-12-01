@@ -79,30 +79,41 @@ class InformacionPersonalDController extends Controller
             // 🔹 Controlar el número de registros por página
             $perPage = $request->input('per_page', 20);
             $perPage = min($perPage, 50); // No permitir más de 50 por página
-
+            // --- Nuevos Parámetros de Filtrado ---
+            $searchQuery = $request->input('search_query');
+            $tipoFilter = $request->input('tipo_doc');
             // 🔹 Consulta optimizada: solo columnas necesarias. ***QUITAMOS 'fotografia'***
-            $data = informacionpersonal_D::select('CIInfPer', 'NombInfPer', 'ApellInfPer', 'ApellMatInfPer', 'mailPer', 'TipoInfPer')
+            $query = informacionpersonal_D::select('CIInfPer', 'NombInfPer', 'ApellInfPer', 'ApellMatInfPer', 'mailPer', 'TipoInfPer')
                 ->where('StatusPer', 1)
                 // Filtramos a mano los que tienen foto (usando la subconsulta o un join si es necesario)
                 // Para mantener la lógica de "solo usuarios con foto" pero sin cargar el BLOB:
-                ->whereNotNull('fotografia')
-                ->whereRaw("LENGTH(fotografia) > 0")
-                ->paginate($perPage);
-
-            if ($data->isEmpty()) {
-                return response()->json(['data' => [], 'message' => 'No se encontraron datos con fotografía'], 200);
+                ->whereNotNull('fotografia');
+            // 1. Filtrar por Cédula/Nombres (Búsqueda global)
+            if (! empty($searchQuery)) {
+                $query->where(function ($q) use ($searchQuery) {
+                    $q->where('informacionpersonal_d.CIInfPer', 'LIKE', "%{$searchQuery}%")
+                        ->orWhere('informacionpersonal_d.NombInfPer', 'LIKE', "%{$searchQuery}%")
+                        ->orWhere('informacionpersonal_d.ApellInfPer', 'LIKE', "%{$searchQuery}%")
+                        ->orWhere('informacionpersonal_d.ApellMatInfPer', 'LIKE', "%{$searchQuery}%");
+                });
             }
 
-            // 🔹 Transformación: Ahora NO HACE NINGÚN CÁLCULO DE FOTO NI BASE64
+            // 2. Filtrar por Carrera
+            if (! empty($tipoFilter) && $tipoFilter !== 'Todos') {
+                $query->where('informacionpersonal_d.TipoInfPer', $tipoFilter);
+            }
+
+            $data = $query->paginate($perPage);
+
+            if ($data->isEmpty()) {
+                return response()->json(['data' => [], 'message' => 'No se encontraron estudiantes con fotografía'], 200);
+            }
+
             $data->getCollection()->transform(function ($item) {
                 $attributes = $item->getAttributes();
-
-                // Simplemente indicamos que el usuario tiene foto (ya filtrado por la consulta)
                 $attributes['hasPhoto'] = true;
 
-                // Aseguramos que la columna 'fotografia' no sea enviada accidentalmente
-                unset($attributes['fotografia']);
-
+                // No need to unset fotografia here, as it's not selected.
                 return $attributes;
             });
 
@@ -123,7 +134,61 @@ class InformacionPersonalDController extends Controller
             ], 500);
         }
     }
+    public function compararFotos($ci)
+    {
+        try {
+            // Foto SIAD (local en la BDD)
+            $persona = informacionpersonal::where('CIInfPer', $ci)
+                ->select('fotografia')
+                ->first();
 
+            if (! $persona || empty($persona->fotografia)) {
+                return response()->json([
+                    'different' => true,
+                    'message' => 'No existe foto SIAD',
+                ]);
+            }
+
+            $fotoLocal = $persona->fotografia;
+
+            // Foto HC (externa)
+            $urlExterna = env('API_BOLSA').'/b_e/vin/fotografia/'.$ci;
+
+            $fotoExterna = @file_get_contents($urlExterna);
+
+            if ($fotoExterna === false) {
+                return response()->json([
+                    'different' => true,
+                    'message' => 'No se pudo obtener foto HC',
+                ]);
+            }
+
+            // Comparación rápida: tamaño
+            if (strlen($fotoLocal) !== strlen($fotoExterna)) {
+                return response()->json([
+                    'different' => true,
+                ]);
+            }
+
+            // Comparación byte a byte más rápida en PHP
+            if ($fotoLocal !== $fotoExterna) {
+                return response()->json([
+                    'different' => true,
+                ]);
+            }
+
+            // Si llega aquí → son iguales
+            return response()->json([
+                'different' => false,
+            ]);
+
+        } catch (\Throwable $e) {
+            return response()->json([
+                'different' => true,
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
 
     public function getFotografia($ci)
     {
@@ -134,7 +199,7 @@ class InformacionPersonalDController extends Controller
                 ->first();
 
             // 2. Verificar si el usuario existe y si tiene foto
-            if (!$persona || empty($persona->fotografia)) {
+            if (! $persona || empty($persona->fotografia)) {
                 // Devolver una respuesta HTTP 404 (Not Found)
                 return response()->json(['error' => 'Fotografía no encontrada para el CI: ' . $ci], 404);
             }
@@ -164,6 +229,7 @@ class InformacionPersonalDController extends Controller
             return response()->json(['error' => 'Error al obtener la fotografía: ' . $e->getMessage()], 500);
         }
     }
+    
 
     /**
      * Store a newly created resource in storage.
@@ -240,8 +306,7 @@ class InformacionPersonalDController extends Controller
                 ->where('StatusPer', 1)
                 // Filtramos a mano los que tienen foto (usando la subconsulta o un join si es necesario)
                 // Para mantener la lógica de "solo usuarios con foto" pero sin cargar el BLOB:
-                ->whereNotNull('fotografia')
-                ->whereRaw("LENGTH(fotografia) > 0");
+                ->whereNotNull('fotografia');
 
             // Obtenemos todos los resultados sin paginación
             $data = $query->get();
