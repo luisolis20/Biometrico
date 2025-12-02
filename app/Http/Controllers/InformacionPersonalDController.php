@@ -81,7 +81,7 @@ class InformacionPersonalDController extends Controller
             $perPage = min($perPage, 50); // No permitir más de 50 por página
             // --- Nuevos Parámetros de Filtrado ---
             $searchQuery = $request->input('search_query');
-            $tipoFilter = $request->input('tipo_doc');
+            $tipoFilter = $request->input('tipoFilter');
             // 🔹 Consulta optimizada: solo columnas necesarias. ***QUITAMOS 'fotografia'***
             $query = informacionpersonal_D::select('CIInfPer', 'NombInfPer', 'ApellInfPer', 'ApellMatInfPer', 'mailPer', 'TipoInfPer')
                 ->where('StatusPer', 1)
@@ -138,7 +138,7 @@ class InformacionPersonalDController extends Controller
     {
         try {
             // Foto SIAD (local en la BDD)
-            $persona = informacionpersonal::where('CIInfPer', $ci)
+            $persona = informacionpersonal_D::where('CIInfPer', $ci)
                 ->select('fotografia')
                 ->first();
 
