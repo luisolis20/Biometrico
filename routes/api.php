@@ -26,19 +26,21 @@ Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
 Route::prefix('biometrico')->group(function () {
     Route::apiResource("users", UserController::class);
     Route::post('login', [AuthController::class, 'login']);
-    Route::get('fotografia/{ci}', [InformacionPersonalController::class, 'getFotografia2'])->middleware('throttle:5000,1');
-    Route::get('fotografiadoc/{ci}', [InformacionPersonalDController::class, 'getFotografia'])->middleware('throttle:5000,1');
-    Route::get('carrerasList', [CarreraController::class, 'carrerasconsula'])->middleware('throttle:5000,1');
+    Route::get('fotografia/{ci}', [InformacionPersonalController::class, 'getFotografia2'])->middleware('throttle:10000,1');
+    Route::get('fotografiaHK/{ci}', [InformacionPersonalController::class, 'getFotografiaHC'])->middleware('throttle:10000,1');
+    Route::get('fotografiadoc/{ci}', [InformacionPersonalDController::class, 'getFotografia'])->middleware('throttle:10000,1');
     Route::middleware('auth:api')->group(function () {
         Route::get('me', [AuthController::class, 'me']);
         Route::post('refresh', [AuthController::class, 'refresh']);
         Route::get('logout', [AuthController::class, 'logout'])->name('logout');
-        Route::get('getdocentes', [InformacionPersonalDController::class, 'getdocentes'])->middleware('throttle:5000,1');
-        Route::get('estudiantesfoto', [InformacionPersonalController::class, 'estudiantesfoto'])->middleware('throttle:5000,1');
+        Route::get('carrerasList', [CarreraController::class, 'carrerasconsula'])->middleware('throttle:10000,1');
+        Route::get('getdocentes', [InformacionPersonalDController::class, 'getdocentes'])->middleware('throttle:10000,1');
+        Route::get('estudiantesfoto', [InformacionPersonalController::class, 'estudiantesfoto'])->middleware('throttle:10000,1');
         Route::get('estudiantes-foto-lista', [InformacionPersonalController::class, 'listarEstudiantesConFoto']);
         Route::get('comparar-foto/{ci}', [InformacionPersonalController::class, 'compararFotos'])->middleware('throttle:10000,1');
+        Route::get('comparar-foto32/{ci}', [InformacionPersonalController::class, 'compararFotos2'])->middleware('throttle:10000,1');
         Route::get('comparar-fotodoc/{ci}', [InformacionPersonalDController::class, 'compararFotos'])->middleware('throttle:10000,1');
-        Route::get('descargarfotosmasiva', [InformacionPersonalController::class, 'descargarFotosMasiva'])->middleware('throttle:5000,1');
+        Route::get('descargarfotosmasiva', [InformacionPersonalController::class, 'descargarFotosMasiva'])->middleware('throttle:10000,1');
         Route::get('descargarfotosmasivadoc', [InformacionPersonalDController::class, 'descargarFotosMasiva'])->middleware('throttle:5000,1');
     });
 });

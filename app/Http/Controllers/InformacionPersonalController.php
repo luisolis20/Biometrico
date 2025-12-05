@@ -7,6 +7,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Response;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Http;
 
 class InformacionPersonalController extends Controller
 {
@@ -41,7 +42,124 @@ class InformacionPersonalController extends Controller
     {
         //
     }
+    public function getFotografiaHC($ci)
+    {
+        $partnerKey = env('HIKCENTRAL_PARTNER_KEY');
+        $firma = env('HIKCENTRAL_FIRMA');
+        $personInfoUrl = env('HIKCENTRAL_PERSON_INFO_URL');
+        $photoUrl = env('HIKCENTRAL_PHOTO_URL');
 
+        try {
+            // 1. OBTENER picUri de la Persona
+            $personResponse = Http::withoutVerifying() // <--- ¡AÑADIR ESTO!
+                ->withHeaders([
+                    'x-ca-key' => $partnerKey,
+                    'x-ca-signature' => $firma,
+                    'x-ca-signature-headers' => 'x-ca-key',
+                ])->post($personInfoUrl, [
+                    'personCode' => $ci,
+                ]);
+
+            // ... lógica de manejo de errores ...
+
+            $picUri = $personResponse->json('data.personPhoto.picUri');
+
+            // 2. OBTENER FOTOGRAFÍA binaria
+            $photoResponse = Http::withoutVerifying() // <--- ¡AÑADIR ESTO!
+                ->withHeaders([
+                    'x-ca-key' => $partnerKey,
+                    'x-ca-signature' => $firma,
+                    'x-ca-signature-headers' => 'x-ca-key',
+                ])->post($photoUrl, [
+                    'picUri' => $picUri,
+                ]);
+
+            // ... lógica de manejo de errores y retorno de la respuesta binaria ...
+            $fotoBinaria = $photoResponse->body();
+            return Response::make($fotoBinaria, 200)
+                ->header('Content-Type', 'image/jpeg')
+                ->header('Content-Disposition', 'inline; filename="foto_hc_' . $ci . '.jpg"');
+        } catch (\Throwable $e) {
+            return response()->json(['error' => 'Error de conexión con HikCentral: ' . $e->getMessage()], 500);
+        }
+    }
+    private function getPhotoFromHikCentral($ci)
+    {
+        $partnerKey = env('HIKCENTRAL_PARTNER_KEY');
+        $firma = env('HIKCENTRAL_FIRMA');
+        $personInfoUrl = env('HIKCENTRAL_PERSON_INFO_URL');
+        $photoUrl = env('HIKCENTRAL_PHOTO_URL');
+
+        // 1. Obtener picUri
+        $personResponse = Http::withoutVerifying() // <--- ¡AÑADIR ESTO!
+            ->withHeaders([
+                'x-ca-key' => $partnerKey,
+                'x-ca-signature' => $firma,
+                'x-ca-signature-headers' => 'x-ca-key',
+            ])->post($personInfoUrl, ['personCode' => $ci]);
+
+        // ... lógica de manejo de picUri ...
+        $picUri = $personResponse->json('data.personPhoto.picUri');
+
+        if ($personResponse->failed() || !$picUri) {
+            return false;
+        }
+
+        // 2. Obtener la foto binaria
+        $photoResponse = Http::withoutVerifying() // <--- ¡AÑADIR ESTO!
+            ->withHeaders([
+                'x-ca-key' => $partnerKey,
+                'x-ca-signature' => $firma,
+                'x-ca-signature-headers' => 'x-ca-key',
+            ])->post($photoUrl, ['picUri' => $picUri]);
+
+        if ($photoResponse->failed()) {
+            return false;
+        }
+
+        return $photoResponse->body();
+    }
+
+    public function compararFotos2($ci)
+    {
+        try {
+            // 1. Foto SIAD (local en la BDD) - Se mantiene igual
+            $persona = informacionpersonal::where('CIInfPer', $ci)
+                ->select('fotografia')
+                ->first();
+
+            if (! $persona || empty($persona->fotografia)) {
+                return response()->json([
+                    'different' => true,
+                    'message' => 'No existe foto SIAD',
+                ]);
+            }
+            $fotoLocal = $persona->fotografia;
+
+            // 2. Foto HC (externa) - Lógica de HikCentral
+            $fotoExterna = $this->getPhotoFromHikCentral($ci);
+
+            if ($fotoExterna === false) {
+                return response()->json([
+                    'different' => true,
+                    'message' => 'No se pudo obtener foto HC (HikCentral)',
+                ]);
+            }
+
+            // 3. Comparación (Se mantiene igual)
+            if ($fotoLocal !== $fotoExterna) {
+                return response()->json(['different' => true]);
+            }
+
+            // Si llega aquí → son iguales
+            return response()->json(['different' => false]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'different' => true,
+                'error' => 'Error en comparación: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
     public function compararFotos($ci)
     {
         try {
@@ -60,7 +178,7 @@ class InformacionPersonalController extends Controller
             $fotoLocal = $persona->fotografia;
 
             // Foto HC (externa)
-            $urlExterna = env('API_BOLSA').'/b_e/vin/fotografia/'.$ci;
+            $urlExterna = env('API_BOLSA') . '/b_e/vin/fotografia/' . $ci;
 
             $fotoExterna = @file_get_contents($urlExterna);
 
@@ -89,7 +207,6 @@ class InformacionPersonalController extends Controller
             return response()->json([
                 'different' => false,
             ]);
-
         } catch (\Throwable $e) {
             return response()->json([
                 'different' => true,
@@ -122,10 +239,10 @@ class InformacionPersonalController extends Controller
                         FROM ingreso i2
                         INNER JOIN carrera c2 ON c2.idCarr = i2.idcarr
                         WHERE i2.CIInfPer = ip.CIInfPer
-                          AND c2.idCarr NOT IN ('.implode(',', array_fill(0, count($carrerasExcluidas), '?')).")
+                          AND c2.idCarr NOT IN (' . implode(',', array_fill(0, count($carrerasExcluidas), '?')) . ")
                           AND c2.NombCarr NOT LIKE '%TRABAJO DE INTEGRACIÓN CURRICULAR%'
                     )
-                    AND c.idCarr NOT IN (".implode(',', array_fill(0, count($carrerasExcluidas), '?')).")
+                    AND c.idCarr NOT IN (" . implode(',', array_fill(0, count($carrerasExcluidas), '?')) . ")
                     AND c.NombCarr NOT LIKE '%TRABAJO DE INTEGRACIÓN CURRICULAR%'
                     AND ip.fotografia IS NOT NULL
                 GROUP BY 
@@ -146,7 +263,6 @@ class InformacionPersonalController extends Controller
                 'message' => 'Estudiantes con fotografía obtenidos correctamente.',
                 'data' => $estudiantes,
             ], 200);
-
         } catch (\Throwable $e) {
             return response()->json([
                 'error' => true,
@@ -256,7 +372,7 @@ class InformacionPersonalController extends Controller
         } catch (\Throwable $e) {
             return response()->json([
                 'error' => true,
-                'message' => 'Error interno del servidor: '.$e->getMessage(),
+                'message' => 'Error interno del servidor: ' . $e->getMessage(),
             ], 500);
         }
     }
@@ -272,7 +388,7 @@ class InformacionPersonalController extends Controller
             // 2. Verificar si el usuario existe y si tiene foto
             if (! $persona || empty($persona->fotografia)) {
                 // Devolver una respuesta HTTP 404 (Not Found)
-                return response()->json(['error' => 'Fotografía no encontrada para el CI: '.$ci], 404);
+                return response()->json(['error' => 'Fotografía no encontrada para el CI: ' . $ci], 404);
             }
 
             $fotoBinaria = $persona->fotografia;
@@ -294,10 +410,10 @@ class InformacionPersonalController extends Controller
             // 4. Devolver la imagen como una respuesta binaria (STREAM)
             return Response::make($fotoBinaria, 200)
                 ->header('Content-Type', $mime)
-                ->header('Content-Disposition', 'inline; filename="foto_'.$ci.'"');
+                ->header('Content-Disposition', 'inline; filename="foto_' . $ci . '"');
         } catch (\Throwable $e) {
             // Log::error('Error en getFotografia DController: ' . $e->getMessage()); // Opcional
-            return response()->json(['error' => 'Error al obtener la fotografía: '.$e->getMessage()], 500);
+            return response()->json(['error' => 'Error al obtener la fotografía: ' . $e->getMessage()], 500);
         }
     }
 
@@ -385,7 +501,7 @@ class InformacionPersonalController extends Controller
             // En caso de fallo (ej. timeout de BD, memoria), es mejor retornar error 500
             return response()->json([
                 'error' => true,
-                'message' => 'Error interno del servidor en descarga masiva: '.$e->getMessage(),
+                'message' => 'Error interno del servidor en descarga masiva: ' . $e->getMessage(),
             ], 500);
         }
     }
