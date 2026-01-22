@@ -42,84 +42,130 @@ class InformacionPersonalController extends Controller
     {
         //
     }
-    public function getFotografiaHC($ci)
+
+    public function generateSignature($url, $hasBody = true)
     {
         $partnerKey = env('HIKCENTRAL_PARTNER_KEY');
-        $firma = env('HIKCENTRAL_FIRMA');
-        $personInfoUrl = env('HIKCENTRAL_PERSON_INFO_URL');
-        $photoUrl = env('HIKCENTRAL_PHOTO_URL');
+        $partnerSecret = env('HIKCENTRAL_PARTNER_SECRET');
+        $path = parse_url($url, PHP_URL_PATH);
 
+        $accept = "*/*";
+        $contentType = $hasBody ? "application/json\n" : "";
+
+        $stringToSign = "POST\n" . $accept . "\n" . $contentType . "x-ca-key:" . $partnerKey . "\n" . $path;
+
+        return base64_encode(hash_hmac('sha256', $stringToSign, $partnerSecret, true));
+    }
+
+    /**
+     * Obtiene la foto de HikCentral y la retorna en Base64
+     */
+    public function getHikPhotoBase64($personCode)
+    {
         try {
-            // 1. OBTENER picUri de la Persona
-            $personResponse = Http::withoutVerifying() // <--- ¡AÑADIR ESTO!
-                ->withHeaders([
-                    'x-ca-key' => $partnerKey,
-                    'x-ca-signature' => $firma,
-                    'x-ca-signature-headers' => 'x-ca-key',
-                ])->post($personInfoUrl, [
-                    'personCode' => $ci,
-                ]);
+            $partnerKey = env('HIKCENTRAL_PARTNER_KEY');
 
-            // ... lógica de manejo de errores ...
+            //Ob estudiante
+            $urlInfo = env('HIKCENTRAL_PERSON_INFO_URL');
+            $response = Http::withoutVerifying()->withHeaders([
+                'x-ca-key' => $partnerKey,
+                'x-ca-signature' => $this->generateSignature($urlInfo),
+                'x-ca-signature-headers' => 'x-ca-key',
+                'Accept' => '*/*',
+                'Content-Type' => 'application/json'
+            ])->post($urlInfo, ['personCode' => $personCode]);
 
-            $picUri = $personResponse->json('data.personPhoto.picUri');
+            $data = $response->json();
+            if (!isset($data['data']['personPhoto']['picUri'])) {
+                return response()->json(['error' => 'No se encontró picUri'], 404);
+            }
 
-            // 2. OBTENER FOTOGRAFÍA binaria
-            $photoResponse = Http::withoutVerifying() // <--- ¡AÑADIR ESTO!
-                ->withHeaders([
-                    'x-ca-key' => $partnerKey,
-                    'x-ca-signature' => $firma,
-                    'x-ca-signature-headers' => 'x-ca-key',
-                ])->post($photoUrl, [
-                    'picUri' => $picUri,
-                ]);
+            $picUri = $data['data']['personPhoto']['picUri'];
 
-            // ... lógica de manejo de errores y retorno de la respuesta binaria ...
-            $fotoBinaria = $photoResponse->body();
-            return Response::make($fotoBinaria, 200)
-                ->header('Content-Type', 'image/jpeg')
-                ->header('Content-Disposition', 'inline; filename="foto_hc_' . $ci . '.jpg"');
-        } catch (\Throwable $e) {
-            return response()->json(['error' => 'Error de conexión con HikCentral: ' . $e->getMessage()], 500);
+            // Ob tiene foto
+            $urlPhoto = env('HIKCENTRAL_PHOTO_URL');
+            $photoResponse = Http::withoutVerifying()->withHeaders([
+                'x-ca-key' => $partnerKey,
+                'x-ca-signature' => $this->generateSignature($urlPhoto),
+                'x-ca-signature-headers' => 'x-ca-key',
+                'Accept' => '*/*',
+                'Content-Type' => 'application/json'
+            ])->post($urlPhoto, [
+                'personCode' => $personCode,
+                'picUri' => $picUri
+            ]);
+
+            // texto plano de la respuesta
+            $fotoBase64 = $photoResponse->body();
+
+            // Retornamos un JSON
+            return response()->json([
+                'personCode' => $personCode,
+                'base64' => $fotoBase64
+            ]);
+        } catch (\Exception $e) {
+            return response()->json(['error' => $e->getMessage()], 500);
         }
     }
-    private function getPhotoFromHikCentral($ci)
+    public function testPhotoBase64($ci)
     {
-        $partnerKey = env('HIKCENTRAL_PARTNER_KEY');
-        $firma = env('HIKCENTRAL_FIRMA');
-        $personInfoUrl = env('HIKCENTRAL_PERSON_INFO_URL');
-        $photoUrl = env('HIKCENTRAL_PHOTO_URL');
+        // 1. Llamamos a la lógica que obtiene la foto
+        $res = $this->getHikPhotoBase64($ci);
+        $data = $res->getData();
 
-        // 1. Obtener picUri
-        $personResponse = Http::withoutVerifying() // <--- ¡AÑADIR ESTO!
-            ->withHeaders([
-                'x-ca-key' => $partnerKey,
-                'x-ca-signature' => $firma,
-                'x-ca-signature-headers' => 'x-ca-key',
-            ])->post($personInfoUrl, ['personCode' => $ci]);
-
-        // ... lógica de manejo de picUri ...
-        $picUri = $personResponse->json('data.personPhoto.picUri');
-
-        if ($personResponse->failed() || !$picUri) {
-            return false;
+        if (isset($data->error)) {
+            return response('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 200)
+                ->header('Content-Type', 'image/gif');
         }
 
-        // 2. Obtener la foto binaria
-        $photoResponse = Http::withoutVerifying() // <--- ¡AÑADIR ESTO!
-            ->withHeaders([
-                'x-ca-key' => $partnerKey,
-                'x-ca-signature' => $firma,
-                'x-ca-signature-headers' => 'x-ca-key',
-            ])->post($photoUrl, ['picUri' => $picUri]);
+        $rawBody = $data->base64;
 
-        if ($photoResponse->failed()) {
-            return false;
+        if (strpos($rawBody, 'data:image') !== false) {
+            $parts = explode('data:image', $rawBody);
+            $base64String = 'data:image' . end($parts);
+        } else {
+            $base64String = $rawBody;
         }
+        $imageData = explode(',', $base64String);
+        $content = base64_decode(end($imageData));
 
-        return $photoResponse->body();
+        return response($content)
+            ->header('Content-Type', 'image/jpeg');
     }
 
+    /**
+     * Compara la foto de HikCentral con la de la Base de Datos local
+     */
+    public function compararFotosHCKWithDB($ci)
+    {
+            $resHik = $this->getHikPhotoBase64($ci);
+        $dataHik = $resHik->getData();
+
+        if (isset($dataHik->error)) return response()->json(['error' => 'No hay foto en Hik'], 404);
+
+        // Limpiar el string de HikCentral para obtener solo el Base64 puro
+        $stringHik = $dataHik->base64;
+        if (strpos($stringHik, 'base64,') !== false) {
+            $parts = explode('base64,', $stringHik);
+            $pureHik = trim(end($parts));
+        } else {
+            $pureHik = trim($stringHik);
+        }
+
+        // Obtener Local
+        $personaLocal = informacionpersonal::where('CIInfPer', $ci)->first();
+        if (!$personaLocal) return response()->json(['error' => 'No local'], 404);
+
+        $pureLocal = base64_encode($personaLocal->fotografia);
+
+        // Comparar
+        $match = ($pureHik === $pureLocal);
+
+        return response()->json([
+            'identicas' => $match,
+            'mensaje' => $match ? 'Match perfecto' : 'Son diferentes'
+        ]);
+    }
     public function compararFotos2($ci)
     {
         try {

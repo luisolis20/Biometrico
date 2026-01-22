@@ -29,6 +29,8 @@ Route::prefix('biometrico')->group(function () {
     Route::get('fotografia/{ci}', [InformacionPersonalController::class, 'getFotografia2'])->middleware('throttle:10000,1');
     Route::get('fotografiaHK/{ci}', [InformacionPersonalController::class, 'getFotografiaHC'])->middleware('throttle:10000,1');
     Route::get('fotografiadoc/{ci}', [InformacionPersonalDController::class, 'getFotografia'])->middleware('throttle:10000,1');
+    Route::get('gethick/{ci}', [InformacionPersonalController::class, 'testPhotoBase64'])->middleware('throttle:10000,1');
+    Route::get('getperson/{ci}', [InformacionPersonalController::class, 'getHikPersonData'])->middleware('throttle:10000,1');
     Route::middleware('auth:api')->group(function () {
         Route::get('me', [AuthController::class, 'me']);
         Route::post('refresh', [AuthController::class, 'refresh']);
