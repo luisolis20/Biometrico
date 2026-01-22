@@ -356,9 +356,7 @@ class InformacionPersonalController extends Controller
                 ->where('carrera.NombCarr', 'NOT LIKE', '%TRABAJO DE INTEGRACIÓN CURRICULAR%')
                 ->whereNotNull('informacionpersonal.fotografia');
 
-            // ======================================
-            // APLICACIÓN DE FILTROS DESDE EL FRONTEND
-            // ======================================
+            
 
             // 1. Filtrar por Cédula/Nombres (Búsqueda global)
             if (! empty($searchQuery)) {
@@ -370,14 +368,12 @@ class InformacionPersonalController extends Controller
                 });
             }
 
-            // 2. Filtrar por Carrera
+            //Filtrar por Carrera
             if (! empty($carreraFilter) && $carreraFilter !== 'Todos') {
                 $query->where('carrera.NombCarr', $carreraFilter);
             }
 
-            // ======================================
-            // AGRUPACIÓN Y PAGINACIÓN
-            // ======================================
+            
             $query->groupBy(
                 'informacionpersonal.CIInfPer',
                 'informacionpersonal.NombInfPer',
