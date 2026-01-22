@@ -134,61 +134,7 @@ class InformacionPersonalDController extends Controller
             ], 500);
         }
     }
-    public function compararFotos($ci)
-    {
-        try {
-            // Foto SIAD (local en la BDD)
-            $persona = informacionpersonal_D::where('CIInfPer', $ci)
-                ->select('fotografia')
-                ->first();
-
-            if (! $persona || empty($persona->fotografia)) {
-                return response()->json([
-                    'different' => true,
-                    'message' => 'No existe foto SIAD',
-                ]);
-            }
-
-            $fotoLocal = $persona->fotografia;
-
-            // Foto HC (externa)
-            $urlExterna = env('API_BOLSA').'/b_e/vin/fotografia/'.$ci;
-
-            $fotoExterna = @file_get_contents($urlExterna);
-
-            if ($fotoExterna === false) {
-                return response()->json([
-                    'different' => true,
-                    'message' => 'No se pudo obtener foto HC',
-                ]);
-            }
-
-            // Comparación rápida: tamaño
-            if (strlen($fotoLocal) !== strlen($fotoExterna)) {
-                return response()->json([
-                    'different' => true,
-                ]);
-            }
-
-            // Comparación byte a byte más rápida en PHP
-            if ($fotoLocal !== $fotoExterna) {
-                return response()->json([
-                    'different' => true,
-                ]);
-            }
-
-            // Si llega aquí → son iguales
-            return response()->json([
-                'different' => false,
-            ]);
-
-        } catch (\Throwable $e) {
-            return response()->json([
-                'different' => true,
-                'error' => $e->getMessage(),
-            ], 500);
-        }
-    }
+   
 
     public function getFotografia($ci)
     {
