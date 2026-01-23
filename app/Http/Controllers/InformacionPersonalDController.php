@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Response;
 use Illuminate\Support\Facades\Storage;
 use ZipArchive;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Cache;
 
 class InformacionPersonalDController extends Controller
 {
@@ -76,106 +77,126 @@ class InformacionPersonalDController extends Controller
     public function getdocentes(Request $request)
     {
         try {
-            // 🔹 Controlar el número de registros por página
-            $perPage = $request->input('per_page', 20);
-            $perPage = min($perPage, 50); // No permitir más de 50 por página
-            // --- Nuevos Parámetros de Filtrado ---
-            $searchQuery = $request->input('search_query');
-            $tipoFilter = $request->input('tipoFilter');
-            // 🔹 Consulta optimizada: solo columnas necesarias. ***QUITAMOS 'fotografia'***
-            $query = informacionpersonal_D::select('CIInfPer', 'NombInfPer', 'ApellInfPer', 'ApellMatInfPer', 'mailPer', 'TipoInfPer')
-                ->where('StatusPer', 1)
-                // Filtramos a mano los que tienen foto (usando la subconsulta o un join si es necesario)
-                // Para mantener la lógica de "solo usuarios con foto" pero sin cargar el BLOB:
-                ->whereNotNull('fotografia');
-            // 1. Filtrar por Cédula/Nombres (Búsqueda global)
-            if (! empty($searchQuery)) {
-                $query->where(function ($q) use ($searchQuery) {
-                    $q->where('informacionpersonal_d.CIInfPer', 'LIKE', "%{$searchQuery}%")
-                        ->orWhere('informacionpersonal_d.NombInfPer', 'LIKE', "%{$searchQuery}%")
-                        ->orWhere('informacionpersonal_d.ApellInfPer', 'LIKE', "%{$searchQuery}%")
-                        ->orWhere('informacionpersonal_d.ApellMatInfPer', 'LIKE', "%{$searchQuery}%");
+            // 1. Capturar parámetros para la llave de caché
+            $page = $request->input('page', 1);
+            $perPage = min($request->input('per_page', 20), 50);
+            $searchQuery = $request->input('search_query', '');
+            $tipoFilter = $request->input('tipoFilter', 'Todos');
+
+            // 2. Crear una llave única basada en la consulta
+            // Ejemplo: docentes_page_1_search_123_tipo_Todos
+            $cacheKey = "docentes_page_{$page}_limit_{$perPage}_search_" . md5($searchQuery) . "_tipo_{$tipoFilter}";
+
+            // 3. Intentar obtener de caché o ejecutar la consulta
+            $responseData = Cache::remember($cacheKey, now()->addMinutes(10), function () use ($perPage, $searchQuery, $tipoFilter) {
+
+                $query = informacionpersonal_D::select('CIInfPer', 'NombInfPer', 'ApellInfPer', 'ApellMatInfPer', 'mailPer', 'TipoInfPer')
+                    ->where('StatusPer', 1)
+                    ->whereNotNull('fotografia');
+
+                // Filtrado por búsqueda
+                if (!empty($searchQuery)) {
+                    $query->where(function ($q) use ($searchQuery) {
+                        $q->where('CIInfPer', 'LIKE', "%{$searchQuery}%")
+                            ->orWhere('NombInfPer', 'LIKE', "%{$searchQuery}%")
+                            ->orWhere('ApellInfPer', 'LIKE', "%{$searchQuery}%")
+                            ->orWhere('ApellMatInfPer', 'LIKE', "%{$searchQuery}%");
+                    });
+                }
+
+                // Filtrado por tipo
+                if (!empty($tipoFilter) && $tipoFilter !== 'Todos') {
+                    $query->where('TipoInfPer', $tipoFilter);
+                }
+
+                $data = $query->paginate($perPage);
+
+                if ($data->isEmpty()) {
+                    return ['data' => [], 'pagination' => null];
+                }
+
+                // Transformar la colección
+                $items = $data->getCollection()->map(function ($item) {
+                    return [
+                        'CIInfPer'        => $item->CIInfPer,
+                        'NombInfPer'      => $item->NombInfPer,
+                        'ApellInfPer'     => $item->ApellInfPer,
+                        'ApellMatInfPer'  => $item->ApellMatInfPer,
+                        'mailPer'         => $item->mailPer,
+                        'TipoInfPer'      => $item->TipoInfPer,
+                        'hasPhoto'        => true,
+                        'estaRegistradoHC' => null // Estado inicial para el front
+                    ];
                 });
-            }
 
-            // 2. Filtrar por Carrera
-            if (! empty($tipoFilter) && $tipoFilter !== 'Todos') {
-                $query->where('informacionpersonal_d.TipoInfPer', $tipoFilter);
-            }
-
-            $data = $query->paginate($perPage);
-
-            if ($data->isEmpty()) {
-                return response()->json(['data' => [], 'message' => 'No se encontraron estudiantes con fotografía'], 200);
-            }
-
-            $data->getCollection()->transform(function ($item) {
-                $attributes = $item->getAttributes();
-                $attributes['hasPhoto'] = true;
-
-                // No need to unset fotografia here, as it's not selected.
-                return $attributes;
+                return [
+                    'data' => $items,
+                    'pagination' => [
+                        'current_page' => $data->currentPage(),
+                        'per_page'     => $data->perPage(),
+                        'total'        => $data->total(),
+                        'last_page'    => $data->lastPage(),
+                    ]
+                ];
             });
 
-            return response()->json([
-                'data' => $data->items(),
-                'pagination' => [
-                    'current_page' => $data->currentPage(),
-                    'per_page' => $data->perPage(),
-                    'total' => $data->total(),
-                    'last_page' => $data->lastPage(),
-                ]
-            ], 200);
+            if (empty($responseData['data'])) {
+                return response()->json(['data' => [], 'message' => 'No se encontraron registros'], 200);
+            }
+
+            return response()->json($responseData, 200);
         } catch (\Throwable $e) {
-            // Log::error('Error en index DController: ' . $e->getMessage()); // Opcional
             return response()->json([
                 'error' => true,
-                'message' => 'Error interno del servidor: ' . $e->getMessage(),
+                'message' => 'Error interno: ' . $e->getMessage(),
             ], 500);
         }
     }
-   
+
 
     public function getFotografia($ci)
     {
         try {
-            // 1. Obtener SÓLO la columna 'fotografia' para el CI específico
-            $persona = informacionpersonal_D::where('CIInfPer', $ci)
-                ->select('fotografia')
-                ->first();
+            // Cacheamos la foto por 60 minutos para evitar consultas repetitivas
+            // Usamos el CI como llave de cache
+            $fotoData = Cache::remember("foto_docente_{$ci}", 3600, function () use ($ci) {
+                $persona = informacionpersonal_D::where('CIInfPer', $ci)
+                    ->select('fotografia')
+                    ->first();
 
-            // 2. Verificar si el usuario existe y si tiene foto
-            if (! $persona || empty($persona->fotografia)) {
-                // Devolver una respuesta HTTP 404 (Not Found)
-                return response()->json(['error' => 'Fotografía no encontrada para el CI: ' . $ci], 404);
-            }
+                if (!$persona || empty($persona->fotografia)) return null;
 
-            $fotoBinaria = $persona->fotografia;
-
-            // 3. Determinar el MIME type
-            $mime = 'image/jpeg'; // MIME type por defecto
-
-            // Intenta determinar el MIME type si el ambiente lo permite
-            if (extension_loaded('fileinfo')) {
-                $finfo = finfo_open(FILEINFO_MIME_TYPE);
-                $detectedMime = finfo_buffer($finfo, $fotoBinaria);
-                finfo_close($finfo);
-
-                if ($detectedMime && strpos($detectedMime, 'image') === 0) {
-                    $mime = $detectedMime;
+                // Detectar MIME una sola vez
+                $mime = 'image/jpeg';
+                if (extension_loaded('fileinfo')) {
+                    $finfo = finfo_open(FILEINFO_MIME_TYPE);
+                    $detectedMime = finfo_buffer($finfo, $persona->fotografia);
+                    finfo_close($finfo);
+                    if ($detectedMime && strpos($detectedMime, 'image') === 0) {
+                        $mime = $detectedMime;
+                    }
                 }
+
+                return [
+                    'binario' => $persona->fotografia,
+                    'mime' => $mime
+                ];
+            });
+
+            if (!$fotoData) {
+                return response()->json(['error' => 'No encontrada'], 404);
             }
 
-            // 4. Devolver la imagen como una respuesta binaria (STREAM)
-            return Response::make($fotoBinaria, 200)
-                ->header('Content-Type', $mime)
+            return Response::make($fotoData['binario'], 200)
+                ->header('Content-Type', $fotoData['mime'])
+                ->header('Cache-Control', 'public, max-age=86400')
                 ->header('Content-Disposition', 'inline; filename="foto_' . $ci . '"');
         } catch (\Throwable $e) {
             // Log::error('Error en getFotografia DController: ' . $e->getMessage()); // Opcional
             return response()->json(['error' => 'Error al obtener la fotografía: ' . $e->getMessage()], 500);
         }
     }
-    
+
 
     /**
      * Store a newly created resource in storage.
