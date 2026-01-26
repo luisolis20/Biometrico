@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Response;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Cache;
 
 class InformacionPersonalController extends Controller
 {
@@ -43,7 +44,7 @@ class InformacionPersonalController extends Controller
         //
     }
 
-   
+
 
     public function listarEstudiantesConFoto()
     {
@@ -140,7 +141,7 @@ class InformacionPersonalController extends Controller
                 ->where('carrera.NombCarr', 'NOT LIKE', '%TRABAJO DE INTEGRACIÓN CURRICULAR%')
                 ->whereNotNull('informacionpersonal.fotografia');
 
-            
+
 
             // 1. Filtrar por Cédula/Nombres (Búsqueda global)
             if (! empty($searchQuery)) {
@@ -157,7 +158,7 @@ class InformacionPersonalController extends Controller
                 $query->where('carrera.NombCarr', $carreraFilter);
             }
 
-            
+
             $query->groupBy(
                 'informacionpersonal.CIInfPer',
                 'informacionpersonal.NombInfPer',
@@ -173,27 +174,35 @@ class InformacionPersonalController extends Controller
                 return response()->json(['data' => [], 'message' => 'No se encontraron estudiantes con fotografía'], 200);
             }
 
+            // Transformamos la colección para añadir el estado de caché
             $data->getCollection()->transform(function ($item) {
-                $attributes = $item->getAttributes();
-                $attributes['hasPhoto'] = true;
+                $ci = $item->CIInfPer;
+                $cacheKey = "hik_status_{$ci}";
 
-                // No need to unset fotografia here, as it's not selected.
-                return $attributes;
+                // Intentamos obtener el valor de la caché. 
+                // Si no existe, devolvemos null para que el frontend sepa que debe verificarlo.
+                $estaRegistrado = Cache::get($cacheKey);
+
+                return [
+                    'CIInfPer'         => $item->CIInfPer,
+                    'NombInfPer'       => $item->NombInfPer,
+                    'ApellInfPer'      => $item->ApellInfPer,
+                    'ApellMatInfPer'   => $item->ApellMatInfPer,
+                    'mailPer'          => $item->mailPer,
+                    'NombCarr'         => $item->NombCarr,
+                    'hasPhoto'         => true,
+                    'estaRegistradoHC' => $estaRegistrado // true, false o null
+                ];
             });
 
             return response()->json([
                 'data' => $data->items(),
                 'pagination' => [
                     'current_page' => $data->currentPage(),
-                    'per_page' => $data->perPage(),
-                    'total' => $data->total(),
-                    'last_page' => $data->lastPage(),
+                    'per_page'     => $data->perPage(),
+                    'total'        => $data->total(),
+                    'last_page'    => $data->lastPage(),
                 ],
-                // Opcional: devolver la lista completa de carreras para el combobox,
-                // si no quieres hacer otra consulta separada.
-                // Para la primera carga (página 1 sin filtros), podrías hacer una consulta
-                // separada eficiente para obtener todas las carreras disponibles en la DB
-                // y enviarla en la respuesta.
             ], 200);
         } catch (\Throwable $e) {
             return response()->json([

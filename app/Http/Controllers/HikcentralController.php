@@ -288,6 +288,83 @@ class HikcentralController extends Controller
             return response()->json(['error' => 'Error interno: ' . $e->getMessage()], 500);
         }
     }
+    public function syncToHikCentralEst(Request $request, $ci)
+    {
+        try {
+            // 1. Obtener datos del docente desde el SIAD
+            $docente = informacionpersonal::
+            ->where('CIInfPer', $ci)->first();
+
+            if (!$docente || empty($docente->fotografia)) {
+                return response()->json(['error' => 'Docente o foto no encontrada'], 404);
+            }
+
+            // 2. Preparar la foto en Base64
+            $fotoBase64 = base64_encode($docente->fotografia);
+
+            // 3. Mapear géneros (SIAD suele usar M/F, HikCentral usa 1 para Masc, 2 para Fem)
+            $gender = ($docente->GeneroPer === 'M') ? 2 : 1;
+
+            $departmentCode = "1";
+
+            if ($docente->TipoInfPer === "D") {
+                $departmentCode = "4";
+            } else if ($docente->TipoInfPer === "A") {
+                $departmentCode = "72";
+            } else if ($docente->TipoInfPer === "T") {
+                $departmentCode = "6";
+            } else if ($docente->TipoInfPer === "TDO") {
+                $departmentCode = "5";
+            }
+
+            // 4. Construir el JSON para HikCentral
+            $body = [
+                "personCode"       => (string)$docente->CIInfPer,
+                "personFamilyName" => $docente->ApellInfPer . " " . ($docente->ApellMatInfPer ?? ""),
+                "personGivenName"  => $docente->NombInfPer,
+                "gender"           => $gender,
+                "orgIndexCode"     => $departmentCode, // Ajustar según tu estructura en HikCentral
+                "remark"           => "Sincronizado desde SIAD - " . ($docente->TipoInfPer ?? "No Definido"),
+                "email"            => $docente->mailPer ?? "",
+                "faces" => [
+                    ["faceData" => $fotoBase64]
+                ],
+                // Si tienes tarjetas en la DB, agrégalas aquí. Si no, enviar vacío o remover.
+                "cards" => [
+                    ["cardNo" => (string)$docente->CIInfPer]
+                ],
+                "beginTime" => now()->toIso8601String(),
+                "endTime"   => now()->addYears(10)->toIso8601String(),
+            ];
+
+            $partnerKey = env('HIKCENTRAL_PARTNER_KEY');
+            $urlInfo = env('HIKCENTRAL_ADD_PERSON');
+            $response = Http::withoutVerifying()->withHeaders([
+                'x-ca-key' => $partnerKey,
+                'x-ca-signature' => $this->generateSignature($urlInfo),
+                'x-ca-signature-headers' => 'x-ca-key',
+                'Accept' => '*/*',
+                'Content-Type' => 'application/json'
+            ])->post($urlInfo, $body);
+
+            if ($response->successful() && $response->json('code') === "0") {
+                // Dentro de syncToHikCentral, después del éxito:
+                Cache::forget("hik_status_{$ci}");
+                Cache::put("hik_status_{$ci}", true, 1800);
+                // También borrar la caché de la lista general para que se refresque el frontend
+                Cache::flush();
+
+                return response()->json($response->json());
+            } else {
+                return response()->json([
+                    'error' => 'Error en HikCentral',
+                    'details' => $response->json()
+                ], $response->status());
+            }
+        } catch (\Throwable $e) {
+            return response()->json(['error' => 'Error interno: ' . $e->getMessage()], 500);
+        }
+    }
 
     /**
      * Compara la foto de HikCentral con la de la Base de Datos local
