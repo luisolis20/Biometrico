@@ -57,7 +57,7 @@ class InformacionPersonalController extends Controller
                     ip.NombInfPer,
                     ip.ApellInfPer,
                     ip.ApellMatInfPer,
-                    ip.mailPer,
+                    ip.mailInst,
                     c.NombCarr
                 FROM informacionpersonal ip
                 INNER JOIN ingreso i ON i.CIInfPer = ip.CIInfPer
@@ -81,7 +81,7 @@ class InformacionPersonalController extends Controller
                     ip.NombInfPer,
                     ip.ApellInfPer,
                     ip.ApellMatInfPer,
-                    ip.mailPer,
+                    ip.mailInst,
                     c.NombCarr
             ";
 
@@ -106,108 +106,115 @@ class InformacionPersonalController extends Controller
     public function estudiantesfoto(Request $request)
     {
         try {
-            $perPage = $request->input('per_page', 20);
-            $perPage = min($perPage, 50);
+            // 1. Capturar parámetros para la llave de caché
+            $page = $request->input('page', 1);
+            $perPage = min($request->input('per_page', 20), 50);
+            $searchQuery = $request->input('search_query', '');
+            $carreraFilter = $request->input('carrera_name', 'Todos');
 
-            // --- Nuevos Parámetros de Filtrado ---
-            $searchQuery = $request->input('search_query');
-            $carreraFilter = $request->input('carrera_name');
-            // -------------------------------------
+            // 2. Crear una llave única basada en los parámetros (MD5 para la búsqueda por seguridad/longitud)
+            $cacheKey = "estudiantes_foto_page_{$page}_limit_{$perPage}_search_" . md5($searchQuery) . "_carrera_" . str_replace(' ', '_', $carreraFilter);
 
-            $carrerasAExcluir = ['056', '122', '124', '197', '206', '601', '602', '603'];
+            // 3. Intentar obtener de caché o ejecutar la consulta (10 minutos de vida)
+            $responseData = Cache::remember($cacheKey, now()->addMinutes(10), function () use ($perPage, $searchQuery, $carreraFilter) {
 
-            $query = informacionpersonal::select(
-                'informacionpersonal.CIInfPer',
-                'informacionpersonal.NombInfPer',
-                'informacionpersonal.ApellInfPer',
-                'informacionpersonal.ApellMatInfPer',
-                'informacionpersonal.mailPer',
-                'carrera.NombCarr'
-            )
-                ->join('factura', 'factura.cedula', '=', 'informacionpersonal.CIInfPer')
-                ->join('ingreso', 'ingreso.CIInfPer', '=', 'informacionpersonal.CIInfPer')
-                ->join('carrera', 'carrera.idCarr', '=', 'ingreso.idcarr')
-                ->where('factura.idper', 125)
-                ->whereIn('ingreso.idper', function ($sub) use ($carrerasAExcluir) {
-                    $sub->from('ingreso as i2')
-                        ->selectRaw('MAX(i2.idper)')
-                        ->join('carrera as c2', 'c2.idCarr', '=', 'i2.idcarr')
-                        ->whereColumn('i2.CIInfPer', 'ingreso.CIInfPer')
-                        ->whereNotIn('c2.idCarr', $carrerasAExcluir)
-                        ->where('c2.NombCarr', 'NOT LIKE', '%TRABAJO DE INTEGRACIÓN CURRICULAR%')
-                        ->groupBy('i2.CIInfPer');
-                })
-                ->whereNotIn('carrera.idCarr', $carrerasAExcluir)
-                ->where('carrera.NombCarr', 'NOT LIKE', '%TRABAJO DE INTEGRACIÓN CURRICULAR%')
-                ->whereNotNull('informacionpersonal.fotografia');
+                $carrerasAExcluir = ['056', '122', '124', '197', '206', '601', '602', '603'];
 
+                $query = informacionpersonal::select(
+                    'informacionpersonal.CIInfPer',
+                    'informacionpersonal.NombInfPer',
+                    'informacionpersonal.ApellInfPer',
+                    'informacionpersonal.ApellMatInfPer',
+                    'informacionpersonal.mailInst',
+                    'carrera.NombCarr'
+                )
+                    ->join('factura', 'factura.cedula', '=', 'informacionpersonal.CIInfPer')
+                    ->join('ingreso', 'ingreso.CIInfPer', '=', 'informacionpersonal.CIInfPer')
+                    ->join('carrera', 'carrera.idCarr', '=', 'ingreso.idcarr')
+                    ->where('factura.idper', 125)
+                    ->whereIn('ingreso.idper', function ($sub) use ($carrerasAExcluir) {
+                        $sub->from('ingreso as i2')
+                            ->selectRaw('MAX(i2.idper)')
+                            ->join('carrera as c2', 'c2.idCarr', '=', 'i2.idcarr')
+                            ->whereColumn('i2.CIInfPer', 'ingreso.CIInfPer')
+                            ->whereNotIn('c2.idCarr', $carrerasAExcluir)
+                            ->where('c2.NombCarr', 'NOT LIKE', '%TRABAJO DE INTEGRACIÓN CURRICULAR%')
+                            ->groupBy('i2.CIInfPer');
+                    })
+                    ->whereNotIn('carrera.idCarr', $carrerasAExcluir)
+                    ->where('carrera.NombCarr', 'NOT LIKE', '%TRABAJO DE INTEGRACIÓN CURRICULAR%')
+                    ->whereNotNull('informacionpersonal.fotografia');
 
+                // Filtrado por búsqueda (Cédula o Nombres)
+                if (!empty($searchQuery)) {
+                    $query->where(function ($q) use ($searchQuery) {
+                        $q->where('informacionpersonal.CIInfPer', 'LIKE', "%{$searchQuery}%")
+                            ->orWhere('informacionpersonal.NombInfPer', 'LIKE', "%{$searchQuery}%")
+                            ->orWhere('informacionpersonal.ApellInfPer', 'LIKE', "%{$searchQuery}%")
+                            ->orWhere('informacionpersonal.ApellMatInfPer', 'LIKE', "%{$searchQuery}%");
+                    });
+                }
 
-            // 1. Filtrar por Cédula/Nombres (Búsqueda global)
-            if (! empty($searchQuery)) {
-                $query->where(function ($q) use ($searchQuery) {
-                    $q->where('informacionpersonal.CIInfPer', 'LIKE', "%{$searchQuery}%")
-                        ->orWhere('informacionpersonal.NombInfPer', 'LIKE', "%{$searchQuery}%")
-                        ->orWhere('informacionpersonal.ApellInfPer', 'LIKE', "%{$searchQuery}%")
-                        ->orWhere('informacionpersonal.ApellMatInfPer', 'LIKE', "%{$searchQuery}%");
+                // Filtrado por Carrera
+                if (!empty($carreraFilter) && $carreraFilter !== 'Todos') {
+                    $query->where('carrera.NombCarr', $carreraFilter);
+                }
+
+                $query->groupBy(
+                    'informacionpersonal.CIInfPer',
+                    'informacionpersonal.NombInfPer',
+                    'informacionpersonal.ApellInfPer',
+                    'informacionpersonal.ApellMatInfPer',
+                    'informacionpersonal.mailInst',
+                    'carrera.NombCarr'
+                );
+
+                $data = $query->paginate($perPage);
+
+                if ($data->isEmpty()) {
+                    return ['data' => [], 'pagination' => null];
+                }
+
+                // Transformar la colección para el frontend
+                $items = $data->getCollection()->map(function ($item) {
+                    // Verificamos si ya existe el estado de HikCentral en la caché individual
+                    // Esto es opcional, pero ayuda a que si ya se verificó, el valor persista
+                    $ci = $item->CIInfPer;
+                    $statusHC = Cache::get("hik_status_{$ci}");
+
+                    return [
+                        'CIInfPer'         => $item->CIInfPer,
+                        'NombInfPer'       => $item->NombInfPer,
+                        'ApellInfPer'      => $item->ApellInfPer,
+                        'ApellMatInfPer'   => $item->ApellMatInfPer,
+                        'mailInst'         => $item->mailInst,
+                        'NombCarr'         => $item->NombCarr,
+                        'hasPhoto'         => true,
+                        'estaRegistradoHC' => $statusHC // null, true o false
+                    ];
                 });
-            }
-
-            //Filtrar por Carrera
-            if (! empty($carreraFilter) && $carreraFilter !== 'Todos') {
-                $query->where('carrera.NombCarr', $carreraFilter);
-            }
-
-
-            $query->groupBy(
-                'informacionpersonal.CIInfPer',
-                'informacionpersonal.NombInfPer',
-                'informacionpersonal.ApellInfPer',
-                'informacionpersonal.ApellMatInfPer',
-                'informacionpersonal.mailPer',
-                'carrera.NombCarr'
-            );
-
-            $data = $query->paginate($perPage);
-
-            if ($data->isEmpty()) {
-                return response()->json(['data' => [], 'message' => 'No se encontraron estudiantes con fotografía'], 200);
-            }
-
-            // Transformamos la colección para añadir el estado de caché
-            $data->getCollection()->transform(function ($item) {
-                $ci = $item->CIInfPer;
-                $cacheKey = "hik_status_{$ci}";
-
-                // Intentamos obtener el valor de la caché. 
-                // Si no existe, devolvemos null para que el frontend sepa que debe verificarlo.
-                $estaRegistrado = Cache::get($cacheKey);
 
                 return [
-                    'CIInfPer'         => $item->CIInfPer,
-                    'NombInfPer'       => $item->NombInfPer,
-                    'ApellInfPer'      => $item->ApellInfPer,
-                    'ApellMatInfPer'   => $item->ApellMatInfPer,
-                    'mailPer'          => $item->mailPer,
-                    'NombCarr'         => $item->NombCarr,
-                    'hasPhoto'         => true,
-                    'estaRegistradoHC' => $estaRegistrado // true, false o null
+                    'data' => $items,
+                    'pagination' => [
+                        'current_page' => $data->currentPage(),
+                        'per_page'     => $data->perPage(),
+                        'total'        => $data->total(),
+                        'last_page'    => $data->lastPage(),
+                    ]
                 ];
             });
 
-            return response()->json([
-                'data' => $data->items(),
-                'pagination' => [
-                    'current_page' => $data->currentPage(),
-                    'per_page'     => $data->perPage(),
-                    'total'        => $data->total(),
-                    'last_page'    => $data->lastPage(),
-                ],
-            ], 200);
+            // 4. Retornar respuesta
+            if (empty($responseData['data'])) {
+                return response()->json(['data' => [], 'message' => 'No se encontraron estudiantes'], 200);
+            }
+
+            return response()->json($responseData, 200);
         } catch (\Throwable $e) {
             return response()->json([
                 'error' => true,
-                'message' => 'Error interno del servidor: ' . $e->getMessage(),
+                'message' => 'Error interno: ' . $e->getMessage(),
             ], 500);
         }
     }
@@ -215,40 +222,31 @@ class InformacionPersonalController extends Controller
     public function getFotografia2($ci)
     {
         try {
-            // 1. Obtener SÓLO la columna 'fotografia' para el CI específico
-            $persona = informacionpersonal::where('CIInfPer', $ci)
-                ->select('fotografia')
-                ->first();
+            // Cacheamos la foto por 60 minutos para ahorrar lecturas a la DB
+            $fotoData = Cache::remember("foto_blob_{$ci}", 3600, function () use ($ci) {
+                $persona = informacionpersonal::where('CIInfPer', $ci)
+                    ->select('fotografia')
+                    ->first();
+                return $persona ? $persona->fotografia : null;
+            });
 
-            // 2. Verificar si el usuario existe y si tiene foto
-            if (! $persona || empty($persona->fotografia)) {
-                // Devolver una respuesta HTTP 404 (Not Found)
-                return response()->json(['error' => 'Fotografía no encontrada para el CI: ' . $ci], 404);
+            if (!$fotoData) {
+                return response()->json(['error' => 'No encontrada'], 404);
             }
 
-            $fotoBinaria = $persona->fotografia;
-
-            // 3. Determinar el MIME type
-            $mime = 'image/jpeg'; // MIME type por defecto
-
-            // Intenta determinar el MIME type si el ambiente lo permite
+            $mime = 'image/jpeg';
             if (extension_loaded('fileinfo')) {
                 $finfo = finfo_open(FILEINFO_MIME_TYPE);
-                $detectedMime = finfo_buffer($finfo, $fotoBinaria);
+                $mime = finfo_buffer($finfo, $fotoData);
                 finfo_close($finfo);
-
-                if ($detectedMime && strpos($detectedMime, 'image') === 0) {
-                    $mime = $detectedMime;
-                }
             }
 
-            // 4. Devolver la imagen como una respuesta binaria (STREAM)
-            return Response::make($fotoBinaria, 200)
+            return response($fotoData, 200)
                 ->header('Content-Type', $mime)
-                ->header('Content-Disposition', 'inline; filename="foto_' . $ci . '"');
+                ->header('Cache-Control', 'public, max-age=3600'); // Cache de navegador
+
         } catch (\Throwable $e) {
-            // Log::error('Error en getFotografia DController: ' . $e->getMessage()); // Opcional
-            return response()->json(['error' => 'Error al obtener la fotografía: ' . $e->getMessage()], 500);
+            return response()->json(['error' => $e->getMessage()], 500);
         }
     }
 
@@ -268,7 +266,7 @@ class InformacionPersonalController extends Controller
                 'informacionpersonal.NombInfPer',
                 'informacionpersonal.ApellInfPer',
                 'informacionpersonal.ApellMatInfPer',
-                'informacionpersonal.mailPer',
+                'informacionpersonal.mailInst',
                 'informacionpersonal.fotografia', // 👈 ¡Incluimos el dato binario de la foto!
                 'carrera.NombCarr'
             )
@@ -304,7 +302,7 @@ class InformacionPersonalController extends Controller
                     'informacionpersonal.NombInfPer',
                     'informacionpersonal.ApellInfPer',
                     'informacionpersonal.ApellMatInfPer',
-                    'informacionpersonal.mailPer',
+                    'informacionpersonal.mailInst',
                     'informacionpersonal.fotografia', // 👈 Agregado al GROUP BY
                     'carrera.NombCarr'
                 );

@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Carrera;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 
 class CarreraController extends Controller
 {
@@ -41,25 +42,42 @@ class CarreraController extends Controller
     public function carrerasconsula()
     {
         try {
-            $carrerasAExcluir = ['056', '122', '124', '197', '206', '601', '602', '603'];
+            // 1. Definir una llave única para la caché de carreras
+            $cacheKey = 'lista_carreras_estudiantes_foto';
 
-            $carreras = Carrera::select('carrera.NombCarr')
-                ->distinct()
-                ->join('ingreso', 'ingreso.idcarr', '=', 'carrera.idCarr')
-                ->join('informacionpersonal', 'informacionpersonal.CIInfPer', '=', 'ingreso.CIInfPer')
-                ->whereNotNull('informacionpersonal.fotografia')
-                // Se puede replicar la lógica de filtro de estudiantesfoto para más precisión, si es necesario.
-                // Para ser simple, solo se filtran las que tienen alguna foto en información personal:
-                ->whereNotIn('carrera.idCarr', $carrerasAExcluir)
-                ->where('carrera.NombCarr', 'NOT LIKE', '%TRABAJO DE INTEGRACIÓN CURRICULAR%')
-                ->orderBy('carrera.NombCarr')
-                ->pluck('NombCarr'); // Obtiene directamente un array de nombres
+            // 2. Usar Cache::remember para evitar consultas pesadas en cada carga
+            $carreras = Cache::remember($cacheKey, 86400, function () { // 86400 segundos = 24 horas
+
+                $carrerasAExcluir = ['056', '122', '124', '197', '206', '601', '602', '603'];
+
+                return Carrera::select('carrera.idCarr', 'carrera.NombCarr')
+                    ->distinct()
+                    // Replicamos exactamente los JOINS de estudiantesfoto para consistencia total
+                    ->join('ingreso', 'ingreso.idcarr', '=', 'carrera.idCarr')
+                    ->join('informacionpersonal', 'informacionpersonal.CIInfPer', '=', 'ingreso.CIInfPer')
+                    ->join('factura', 'factura.cedula', '=', 'informacionpersonal.CIInfPer')
+                    ->where('factura.idper', 125) // Solo periodo vigente
+                    ->whereNotNull('informacionpersonal.fotografia')
+                    ->whereNotIn('carrera.idCarr', $carrerasAExcluir)
+                    ->where('carrera.NombCarr', 'NOT LIKE', '%TRABAJO DE INTEGRACIÓN CURRICULAR%')
+                    ->orderBy('carrera.NombCarr')
+                    ->get() // Traemos ID y Nombre
+                    ->map(function ($carrera) {
+                        return [
+                            'id' => $carrera->idCarr,
+                            'nombre' => $carrera->NombCarr
+                        ];
+                    });
+            });
 
             return response()->json([
                 'data' => $carreras,
+                'source' => Cache::has($cacheKey) ? 'cache' : 'database' // Opcional: para debug
             ], 200);
         } catch (\Throwable $e) {
-            return response()->json(['error' => 'Error al obtener lista de carreras: ' . $e->getMessage()], 500);
+            return response()->json([
+                'error' => 'Error al obtener lista de carreras: ' . $e->getMessage()
+            ], 500);
         }
     }
 }

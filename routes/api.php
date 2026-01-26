@@ -32,10 +32,14 @@ Route::prefix('biometrico')->group(function () {
     Route::get('fotografiadoc/{ci}', [InformacionPersonalDController::class, 'getFotografia'])->middleware('throttle:5000,1');
     Route::get('gethick/{ci}', [HikcentralController::class, 'testPhotoBase64'])->middleware('throttle:10000,1');
     Route::get('getperson/{ci}', [HikcentralController::class, 'checkHikStatus'])->middleware('throttle:1000000,1');
+    Route::get('getperson-est/{ci}', [HikcentralController::class, 'checkHikStatusEst'])->middleware('throttle:1000000,1');
     Route::get('compare-hikdoc/{ci}', [HikcentralController::class, 'compararFotosHCKWithDBDOC'])->middleware('throttle:20000,1');
+    Route::get('compare-hikdoc-est/{ci}', [HikcentralController::class, 'compararFotosHCKWithDBEstudiante'])->middleware('throttle:20000,1');
     Route::post('sync-hikcentral/{ci}', [HikcentralController::class, 'syncToHikCentral'])->middleware('throttle:20000,1');
+    Route::post('sync-hikdoc/{ci}', [HikcentralController::class, 'syncToHikCentralEst'])->middleware('throttle:20000,1');
     Route::get('clear-cache/{ci}', [HikcentralController::class, 'clearDocenteCache'])->middleware('throttle:10000,1');
     Route::get('/get-pending-sync', [HikcentralController::class, 'getPendingSync'])->middleware('throttle:10000,1');
+    Route::get('/get-pending-sync-est', [HikcentralController::class, 'getPendingSyncEst'])->middleware('throttle:10000,1');
     Route::middleware('auth:api')->group(function () {
         Route::get('me', [AuthController::class, 'me']);
         Route::post('refresh', [AuthController::class, 'refresh']);

@@ -26,7 +26,7 @@ class InformacionPersonalDController extends Controller
             $perPage = min($perPage, 50); // No permitir más de 50 por página
 
             // 🔹 Consulta optimizada: solo columnas necesarias
-            $data = informacionpersonal_D::select('CIInfPer', 'NombInfPer', 'ApellInfPer', 'ApellMatInfPer', 'mailPer', 'TipoInfPer', 'fotografia')
+            $data = informacionpersonal_D::select('CIInfPer', 'NombInfPer', 'ApellInfPer', 'ApellMatInfPer', 'mailInst', 'TipoInfPer', 'fotografia')
                 ->where('StatusPer', 1)
                 ->whereNotNull('fotografia')
                 ->whereRaw("LENGTH(fotografia) > 0")
@@ -90,7 +90,7 @@ class InformacionPersonalDController extends Controller
             // 3. Intentar obtener de caché o ejecutar la consulta
             $responseData = Cache::remember($cacheKey, now()->addMinutes(10), function () use ($perPage, $searchQuery, $tipoFilter) {
 
-                $query = informacionpersonal_D::select('CIInfPer', 'NombInfPer', 'ApellInfPer', 'ApellMatInfPer', 'mailPer', 'TipoInfPer')
+                $query = informacionpersonal_D::select('CIInfPer', 'NombInfPer', 'ApellInfPer', 'ApellMatInfPer', 'mailInst', 'TipoInfPer')
                     ->where('StatusPer', 1)
                     ->whereNotNull('fotografia');
 
@@ -122,7 +122,7 @@ class InformacionPersonalDController extends Controller
                         'NombInfPer'      => $item->NombInfPer,
                         'ApellInfPer'     => $item->ApellInfPer,
                         'ApellMatInfPer'  => $item->ApellMatInfPer,
-                        'mailPer'         => $item->mailPer,
+                        'mailInst'         => $item->mailInst,
                         'TipoInfPer'      => $item->TipoInfPer,
                         'hasPhoto'        => true,
                         'estaRegistradoHC' => null // Estado inicial para el front
@@ -269,7 +269,7 @@ class InformacionPersonalDController extends Controller
 
             // Usamos la misma lógica de filtro que 'estudiantesfoto', pero pedimos 'fotografia'
             // y NO usamos paginación.
-            $query = informacionpersonal_D::select('CIInfPer', 'NombInfPer', 'ApellInfPer', 'ApellMatInfPer', 'mailPer', 'TipoInfPer', 'fotografia')
+            $query = informacionpersonal_D::select('CIInfPer', 'NombInfPer', 'ApellInfPer', 'ApellMatInfPer', 'mailInst', 'TipoInfPer', 'fotografia')
                 ->where('StatusPer', 1)
                 // Filtramos a mano los que tienen foto (usando la subconsulta o un join si es necesario)
                 // Para mantener la lógica de "solo usuarios con foto" pero sin cargar el BLOB:
