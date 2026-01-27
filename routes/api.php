@@ -30,6 +30,7 @@ Route::prefix('biometrico')->group(function () {
     Route::get('fotografia/{ci}', [InformacionPersonalController::class, 'getFotografia2'])->middleware('throttle:10000,1');
     Route::get('fotografiaHK/{ci}', [InformacionPersonalController::class, 'getFotografiaHC'])->middleware('throttle:10000,1');
     Route::get('fotografiadoc/{ci}', [InformacionPersonalDController::class, 'getFotografia'])->middleware('throttle:5000,1');
+    Route::get('getindivDoc/{ci}', [InformacionPersonalDController::class, 'getDocenteByCI'])->middleware('throttle:5000,1');
     Route::get('gethick/{ci}', [HikcentralController::class, 'testPhotoBase64'])->middleware('throttle:10000,1');
     Route::get('getperson/{ci}', [HikcentralController::class, 'checkHikStatus'])->middleware('throttle:1000000,1');
     Route::get('getperson-est/{ci}', [HikcentralController::class, 'checkHikStatusEst'])->middleware('throttle:1000000,1');
