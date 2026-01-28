@@ -50,22 +50,26 @@ class CarreraController extends Controller
 
                 $carrerasAExcluir = ['056', '122', '124', '197', '206', '601', '602', '603'];
 
-                return Carrera::select('carrera.idCarr', 'carrera.NombCarr')
+                return Carrera::select('carrera.idCarr', 'carrera.NombCarr', 'carrera.StatusCarr','carrera.codihicenter')
                     ->distinct()
                     // Replicamos exactamente los JOINS de estudiantesfoto para consistencia total
                     ->join('ingreso', 'ingreso.idcarr', '=', 'carrera.idCarr')
                     ->join('informacionpersonal', 'informacionpersonal.CIInfPer', '=', 'ingreso.CIInfPer')
                     ->join('factura', 'factura.cedula', '=', 'informacionpersonal.CIInfPer')
                     ->where('factura.idper', 125) // Solo periodo vigente
+                    ->where('carrera.StatusCarr', 1) // Solo periodo vigente
                     ->whereNotNull('informacionpersonal.fotografia')
                     ->whereNotIn('carrera.idCarr', $carrerasAExcluir)
                     ->where('carrera.NombCarr', 'NOT LIKE', '%TRABAJO DE INTEGRACIÓN CURRICULAR%')
-                    ->orderBy('carrera.NombCarr')
+                    ->orderBy('carrera.NombCarr', 'asc')
+                    
                     ->get() // Traemos ID y Nombre
                     ->map(function ($carrera) {
                         return [
                             'id' => $carrera->idCarr,
-                            'nombre' => $carrera->NombCarr
+                            'nombre' => $carrera->NombCarr,
+                            'estado' => $carrera->StatusCarr,
+                            'codihi' => $carrera->codihicenter
                         ];
                     });
             });

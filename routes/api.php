@@ -41,11 +41,11 @@ Route::prefix('biometrico')->group(function () {
     Route::get('clear-cache/{ci}', [HikcentralController::class, 'clearDocenteCache'])->middleware('throttle:10000,1');
     Route::get('/get-pending-sync', [HikcentralController::class, 'getPendingSync'])->middleware('throttle:10000,1');
     Route::get('/get-pending-sync-est', [HikcentralController::class, 'getPendingSyncEst'])->middleware('throttle:10000,1');
+    Route::get('carrerasList', [CarreraController::class, 'carrerasconsula'])->middleware('throttle:10000,1');
     Route::middleware('auth:api')->group(function () {
         Route::get('me', [AuthController::class, 'me']);
         Route::post('refresh', [AuthController::class, 'refresh']);
         Route::get('logout', [AuthController::class, 'logout'])->name('logout');
-        Route::get('carrerasList', [CarreraController::class, 'carrerasconsula'])->middleware('throttle:10000,1');
         Route::get('getdocentes', [InformacionPersonalDController::class, 'getdocentes'])->middleware('throttle:10000,1');
         Route::get('estudiantesfoto', [InformacionPersonalController::class, 'estudiantesfoto'])->middleware('throttle:10000,1');
         Route::get('estudiantes-foto-lista', [InformacionPersonalController::class, 'listarEstudiantesConFoto']);

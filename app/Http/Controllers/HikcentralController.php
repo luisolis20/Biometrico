@@ -347,7 +347,7 @@ class HikcentralController extends Controller
 
             // Aplicar el mismo filtro de carrera que la tabla
             if (!empty($carreraFilter) && $carreraFilter !== 'Todos') {
-                $query->where('carrera.NombCarr', $carreraFilter);
+                $query->where('carrera.idCarr', $carreraFilter);
             }
 
             $personal = $query->groupBy('informacionpersonal.CIInfPer', 'informacionpersonal.NombInfPer', 'informacionpersonal.ApellInfPer')->get();
@@ -393,7 +393,18 @@ class HikcentralController extends Controller
 
             // Género: HikCentral 1:Masculino, 2:Femenino (Ajustar según tu DB)
             $gender = ($estudiante->GeneroPer === 'M') ? 1 : 2;
+            // --- Validación y Formateo del orgIndexCode ---
             $departmentCode = $estudiante->codihicenter;
+
+            if (is_null($departmentCode) || $departmentCode === '') {
+                return response()->json([
+                    'error' => 'Configuración incompleta',
+                    'message' => "La carrera del estudiante no tiene un 'codihicenter' asignado en la base de datos."
+                ], 422);
+            }
+
+            // Convertimos a string y eliminamos cualquier espacio accidental
+            $departmentCode = trim((string)$departmentCode);
             $body = [
                 "personCode"       => (string)$estudiante->CIInfPer,
                 "personFamilyName" => $estudiante->ApellInfPer . " " . ($estudiante->ApellMatInfPer ?? ""),

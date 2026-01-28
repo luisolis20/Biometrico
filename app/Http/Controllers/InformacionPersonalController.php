@@ -126,7 +126,8 @@ class InformacionPersonalController extends Controller
                     'informacionpersonal.ApellInfPer',
                     'informacionpersonal.ApellMatInfPer',
                     'informacionpersonal.mailInst',
-                    'carrera.NombCarr'
+                    'carrera.NombCarr',
+                    'carrera.idCarr'
                 )
                     ->join('factura', 'factura.cedula', '=', 'informacionpersonal.CIInfPer')
                     ->join('ingreso', 'ingreso.CIInfPer', '=', 'informacionpersonal.CIInfPer')
@@ -157,7 +158,7 @@ class InformacionPersonalController extends Controller
 
                 // Filtrado por Carrera
                 if (!empty($carreraFilter) && $carreraFilter !== 'Todos') {
-                    $query->where('carrera.NombCarr', $carreraFilter);
+                    $query->where('carrera.idCarr', $carreraFilter);
                 }
 
                 $query->groupBy(
@@ -166,7 +167,8 @@ class InformacionPersonalController extends Controller
                     'informacionpersonal.ApellInfPer',
                     'informacionpersonal.ApellMatInfPer',
                     'informacionpersonal.mailInst',
-                    'carrera.NombCarr'
+                    'carrera.NombCarr',
+                    'carrera.idCarr'
                 );
 
                 $data = $query->paginate($perPage);
