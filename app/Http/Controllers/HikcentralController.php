@@ -307,20 +307,29 @@ class HikcentralController extends Controller
                 'Accept' => '*/*',
                 'Content-Type' => 'application/json'
             ])->post($urlInfo, $body);
+            $resData = $response->json();
 
-            if ($response->successful() && $response->json('code') === "0") {
+            if ($response->successful() && isset($resData['code']) && $resData['code'] == 0) {
                 // Dentro de syncToHikCentral, después del éxito:
                 Cache::forget("hik_status_{$ci}");
+                Cache::forget("foto_docente_{$ci}");
                 Cache::put("hik_status_{$ci}", true, 1800);
                 // También borrar la caché de la lista general para que se refresque el frontend
                 Cache::flush();
 
-                return response()->json($response->json());
-            } else {
+                 // RETORNO CRÍTICO: Debe llevar 'code' y 'msg' para tu JS
                 return response()->json([
-                    'error' => 'Error en HikCentral',
-                    'details' => $response->json()
-                ], $response->status());
+                    'code' => "0",
+                    'msg'  => "Success",
+                    'data' => $resData['data'] ?? $ci // Retorna el personId de HC o el CI
+                ], 200);
+            } else {
+                // Si HikCentral devuelve error (ej. persona ya existe o error de parámetros)
+                return response()->json([
+                    'code'    => $resData['code'] ?? "500",
+                    'msg'     => $resData['msg'] ?? "Error desconocido en HikCentral",
+                    'details' => $resData
+                ], 400);
             }
         } catch (\Throwable $e) {
             return response()->json(['error' => 'Error interno: ' . $e->getMessage()], 500);
