@@ -159,7 +159,7 @@ class InformacionPersonalDController extends Controller
             $cacheKey = "docente_individual_{$ci}";
 
             // 2. Intentar recuperar de caché o buscar en la DB
-            $docente = Cache::remember($cacheKey, now()->addMinutes(30), function () use ($ci) {
+            $docente = Cache::remember($cacheKey, now()->addMinutes(2), function () use ($ci) {
 
                 $item = informacionpersonal_D::select(
                     'CIInfPer',
@@ -206,6 +206,8 @@ class InformacionPersonalDController extends Controller
             ], 500);
         }
     }
+
+
 
     public function getFotografia($ci)
     {

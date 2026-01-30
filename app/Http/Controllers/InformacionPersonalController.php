@@ -133,6 +133,7 @@ class InformacionPersonalController extends Controller
                     ->join('ingreso', 'ingreso.CIInfPer', '=', 'informacionpersonal.CIInfPer')
                     ->join('carrera', 'carrera.idCarr', '=', 'ingreso.idcarr')
                     ->where('factura.idper', 125)
+                    ->where('carrera.StatusCarr', 1)
                     ->whereIn('ingreso.idper', function ($sub) use ($carrerasAExcluir) {
                         $sub->from('ingreso as i2')
                             ->selectRaw('MAX(i2.idper)')
@@ -217,6 +218,74 @@ class InformacionPersonalController extends Controller
             return response()->json([
                 'error' => true,
                 'message' => 'Error interno: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+     public function getEstudianteByCI($ci)
+    {
+        try {
+            // 1. Crear una llave de caché específica para este CI
+            $cacheKey = "estudiante_individual_{$ci}";
+            // 2. Intentar recuperar de caché o buscar en la DB
+            $estudiante = Cache::remember($cacheKey, now()->addMinutes(2), function () use ($ci) {
+                $carrerasAExcluir = ['056', '122', '124', '197', '206', '601', '602', '603'];
+
+                $item = informacionpersonal::select(
+                'informacionpersonal.*',
+                'carrera.idCarr',
+                'carrera.codihicenter',
+                'carrera.NombCarr',
+                'carrera.StatusCarr'
+            )
+                ->join('factura', 'factura.cedula', '=', 'informacionpersonal.CIInfPer')
+                ->join('ingreso', 'ingreso.CIInfPer', '=', 'informacionpersonal.CIInfPer')
+                ->join('carrera', 'carrera.idCarr', '=', 'ingreso.idcarr')
+                ->where('informacionpersonal.CIInfPer', $ci) // Filtro por el CI solicitado
+                ->where('factura.idper', 125) // Solo periodo vigente
+                ->where('carrera.StatusCarr', 1)
+                ->whereIn('ingreso.idper', function ($sub) use ($carrerasAExcluir) {
+                    $sub->from('ingreso as i2')
+                        ->selectRaw('MAX(i2.idper)')
+                        ->join('carrera as c2', 'c2.idCarr', '=', 'i2.idcarr')
+                        ->whereColumn('i2.CIInfPer', 'ingreso.CIInfPer')
+                        ->whereNotIn('c2.idCarr', $carrerasAExcluir)
+                        ->where('c2.NombCarr', 'NOT LIKE', '%TRABAJO DE INTEGRACIÓN CURRICULAR%')
+                        ->groupBy('i2.CIInfPer');
+                })
+                ->whereNotIn('carrera.idCarr', $carrerasAExcluir)
+                ->where('carrera.NombCarr', 'NOT LIKE', '%TRABAJO DE INTEGRACIÓN CURRICULAR%')
+                ->first();
+
+                if (!$item) {
+                    return null;
+                }
+
+                // 3. Transformar el modelo a un array plano (limpio para el front)
+                return [
+                    'CIInfPer'         => $item->CIInfPer,
+                    'NombInfPer'       => $item->NombInfPer,
+                    'ApellInfPer'      => $item->ApellInfPer,
+                    'ApellMatInfPer'   => $item->ApellMatInfPer,
+                    'mailInst'         => $item->mailInst,
+                    'NombCarr'       => $item->NombCarr,
+                    'hasPhoto'         => true,
+                    'estaRegistradoHC' => null // Cruce con el estado de HikCentral
+                ];
+            });
+
+            // 4. Validar si se encontró el docente
+            if (!$estudiante) {
+                return response()->json([
+                    'error' => true,
+                    'message' => "No se encontró el docente con CI: {$ci}"
+                ], 404);
+            }
+
+            return response()->json($estudiante, 200);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'error' => true,
+                'message' => 'Error al obtener docente: ' . $e->getMessage(),
             ], 500);
         }
     }

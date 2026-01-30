@@ -335,13 +335,25 @@ class HikcentralController extends Controller
             $query = informacionpersonal::select(
                 'informacionpersonal.CIInfPer',
                 'informacionpersonal.NombInfPer',
-                'informacionpersonal.ApellInfPer'
+                'informacionpersonal.ApellInfPer',
+                'informacionpersonal.ApellMatInfPer'
             )
                 ->join('factura', 'factura.cedula', '=', 'informacionpersonal.CIInfPer')
                 ->join('ingreso', 'ingreso.CIInfPer', '=', 'informacionpersonal.CIInfPer')
                 ->join('carrera', 'carrera.idCarr', '=', 'ingreso.idcarr')
-                ->where('factura.idper', 125)
+                ->where('factura.idper', 125) // Periodo vigente
+                ->where('carrera.StatusCarr', 1)
                 ->whereNotNull('informacionpersonal.fotografia')
+                // --- MISMA LÓGICA DE FILTRADO DE CARRERA ÚLTIMA ---
+                ->whereIn('ingreso.idper', function ($sub) use ($carrerasAExcluir) {
+                    $sub->from('ingreso as i2')
+                        ->selectRaw('MAX(i2.idper)')
+                        ->join('carrera as c2', 'c2.idCarr', '=', 'i2.idcarr')
+                        ->whereColumn('i2.CIInfPer', 'ingreso.CIInfPer')
+                        ->whereNotIn('c2.idCarr', $carrerasAExcluir)
+                        ->where('c2.NombCarr', 'NOT LIKE', '%TRABAJO DE INTEGRACIÓN CURRICULAR%')
+                        ->groupBy('i2.CIInfPer');
+                })
                 ->whereNotIn('carrera.idCarr', $carrerasAExcluir)
                 ->where('carrera.NombCarr', 'NOT LIKE', '%TRABAJO DE INTEGRACIÓN CURRICULAR%');
 
@@ -350,7 +362,13 @@ class HikcentralController extends Controller
                 $query->where('carrera.idCarr', $carreraFilter);
             }
 
-            $personal = $query->groupBy('informacionpersonal.CIInfPer', 'informacionpersonal.NombInfPer', 'informacionpersonal.ApellInfPer')->get();
+            // Agrupamos para evitar duplicados en el listado masivo
+            $personal = $query->groupBy(
+                'informacionpersonal.CIInfPer',
+                'informacionpersonal.NombInfPer',
+                'informacionpersonal.ApellInfPer',
+                'informacionpersonal.ApellMatInfPer'
+            )->get();
 
             $pendientes = [];
 
@@ -377,11 +395,33 @@ class HikcentralController extends Controller
     public function syncToHikCentralEst(Request $request, $ci)
     {
         try {
+            $carrerasAExcluir = ['056', '122', '124', '197', '206', '601', '602', '603'];
             // 1. Obtener datos (Usando el mismo modelo que estudiantesfoto)
-            $estudiante = informacionpersonal::select('informacionpersonal.*', 'carrera.codihicenter')
+            // 1. Obtener datos con la MISMA lógica de estudiantesfoto
+            $estudiante = informacionpersonal::select(
+                'informacionpersonal.*',
+                'carrera.idCarr',
+                'carrera.codihicenter',
+                'carrera.NombCarr',
+                'carrera.StatusCarr'
+            )
+                ->join('factura', 'factura.cedula', '=', 'informacionpersonal.CIInfPer')
                 ->join('ingreso', 'ingreso.CIInfPer', '=', 'informacionpersonal.CIInfPer')
                 ->join('carrera', 'carrera.idCarr', '=', 'ingreso.idcarr')
-                ->where('informacionpersonal.CIInfPer', $ci)
+                ->where('informacionpersonal.CIInfPer', $ci) // Filtro por el CI solicitado
+                ->where('factura.idper', 125) // Solo periodo vigente
+                ->where('carrera.StatusCarr', 1)
+                ->whereIn('ingreso.idper', function ($sub) use ($carrerasAExcluir) {
+                    $sub->from('ingreso as i2')
+                        ->selectRaw('MAX(i2.idper)')
+                        ->join('carrera as c2', 'c2.idCarr', '=', 'i2.idcarr')
+                        ->whereColumn('i2.CIInfPer', 'ingreso.CIInfPer')
+                        ->whereNotIn('c2.idCarr', $carrerasAExcluir)
+                        ->where('c2.NombCarr', 'NOT LIKE', '%TRABAJO DE INTEGRACIÓN CURRICULAR%')
+                        ->groupBy('i2.CIInfPer');
+                })
+                ->whereNotIn('carrera.idCarr', $carrerasAExcluir)
+                ->where('carrera.NombCarr', 'NOT LIKE', '%TRABAJO DE INTEGRACIÓN CURRICULAR%')
                 ->first();
 
             if (!$estudiante || empty($estudiante->fotografia)) {
@@ -394,13 +434,19 @@ class HikcentralController extends Controller
             // Género: HikCentral 1:Masculino, 2:Femenino (Ajustar según tu DB)
             $gender = ($estudiante->GeneroPer === 'M') ? 1 : 2;
             // --- Validación y Formateo del orgIndexCode ---
+
             $departmentCode = $estudiante->codihicenter;
 
-            if (is_null($departmentCode) || $departmentCode === '') {
+            if (is_null($departmentCode) || $departmentCode === '' || $departmentCode === 0) {
                 return response()->json([
-                    'error' => 'Configuración incompleta',
-                    'message' => "La carrera del estudiante no tiene un 'codihicenter' asignado en la base de datos."
-                ], 422);
+                    'error' => 'Configuración incompleta en HikCentral',
+                    'message' => "El campo 'codihicenter' no se ha registrado para esta carrera.",
+                    'carrera' => [
+                        'idCarr'     => $estudiante->idCarr,
+                        'NombCarr'   => $estudiante->NombCarr,
+                        'StatusCarr' => $estudiante->StatusCarr,
+                    ]
+                ], 422); // 422 Unprocessable Entity
             }
 
             // Convertimos a string y eliminamos cualquier espacio accidental
@@ -434,28 +480,33 @@ class HikcentralController extends Controller
                 'Content-Type' => 'application/json'
             ])->post($urlInfo, $body);
 
+
+
             $resData = $response->json();
 
-            if ($response->successful() && ($resData['code'] === "0" || $resData['code'] === 0)) {
+            // Verificamos si HikCentral respondió con éxito (code 0)
+            // Usamos == para comparar "0" o 0 indistintamente
+            if ($response->successful() && isset($resData['code']) && $resData['code'] == 0) {
 
-                // 🔥 CORRELACIÓN DE CACHÉ
-                // 1. Forzamos el estado a true para que la tabla se actualice visualmente
+                // 🔥 ACTUALIZACIÓN DE CACHÉ
                 Cache::put("hik_status_est_{$ci}", true, 1800);
-
-                // 2. Si manejas caché de imágenes, bórrala para que se refresque
                 Cache::forget("foto_blob_{$ci}");
 
+                // RETORNO CRÍTICO: Debe llevar 'code' y 'msg' para tu JS
                 return response()->json([
-                    'status' => 'success',
-                    'message' => 'Sincronizado correctamente',
-                    'data' => $resData
-                ]);
-            }
+                    'code' => "0",
+                    'msg'  => "Success",
+                    'data' => $resData['data'] ?? $ci // Retorna el personId de HC o el CI
+                ], 200);
 
-            return response()->json([
-                'error' => 'Error en HikCentral',
-                'details' => $resData
-            ], 400);
+            } else {
+                // Si HikCentral devuelve error (ej. persona ya existe o error de parámetros)
+                return response()->json([
+                    'code'    => $resData['code'] ?? "500",
+                    'msg'     => $resData['msg'] ?? "Error desconocido en HikCentral",
+                    'details' => $resData
+                ], 400);
+            }
         } catch (\Throwable $e) {
             return response()->json(['error' => $e->getMessage()], 500);
         }
