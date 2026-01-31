@@ -221,13 +221,14 @@ class InformacionPersonalController extends Controller
             ], 500);
         }
     }
-     public function getEstudianteByCI($ci)
+     public function getEstudianteByCI(Request $request, $ci)
     {
         try {
             // 1. Crear una llave de caché específica para este CI
             $cacheKey = "estudiante_individual_{$ci}";
             // 2. Intentar recuperar de caché o buscar en la DB
-            $estudiante = Cache::remember($cacheKey, now()->addMinutes(2), function () use ($ci) {
+            $estudiante = Cache::remember($cacheKey, now()->addMinutes(1), function () use ($ci, $request) {
+                $idperidod = $request->input('idper');
                 $carrerasAExcluir = ['056', '122', '124', '197', '206', '601', '602', '603'];
 
                 $item = informacionpersonal::select(
@@ -241,7 +242,7 @@ class InformacionPersonalController extends Controller
                 ->join('ingreso', 'ingreso.CIInfPer', '=', 'informacionpersonal.CIInfPer')
                 ->join('carrera', 'carrera.idCarr', '=', 'ingreso.idcarr')
                 ->where('informacionpersonal.CIInfPer', $ci) // Filtro por el CI solicitado
-                ->where('factura.idper', 125) // Solo periodo vigente
+                ->where('factura.idper', $idperidod) // Solo periodo vigente
                 ->where('carrera.StatusCarr', 1)
                 ->whereIn('ingreso.idper', function ($sub) use ($carrerasAExcluir) {
                     $sub->from('ingreso as i2')

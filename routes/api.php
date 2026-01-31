@@ -8,6 +8,8 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\CarreraController;
 use App\Http\Controllers\HikcentralController;
+use App\Http\Controllers\PeriodoLectivoController;
+
 
 
 /*
@@ -33,6 +35,7 @@ Route::prefix('biometrico')->group(function () {
     Route::get('getindivDoc/{ci}', [InformacionPersonalDController::class, 'getDocenteByCI'])->middleware('throttle:5000,1');
     Route::get('getindivEst/{ci}', [InformacionPersonalController::class, 'getEstudianteByCI'])->middleware('throttle:10000,1');
     Route::get('gethick/{ci}', [HikcentralController::class, 'testPhotoBase64'])->middleware('throttle:10000,1');
+    Route::get('get-periodos-rec', [PeriodoLectivoController::class, 'getActivos'])->middleware('throttle:10000,1');
 
     Route::get('getperson/{ci}', [HikcentralController::class, 'checkHikStatus'])->middleware('throttle:1000000,1');
     Route::get('getperson-est/{ci}', [HikcentralController::class, 'checkHikStatusEst'])->middleware('throttle:1000000,1');
@@ -40,6 +43,7 @@ Route::prefix('biometrico')->group(function () {
     Route::get('compare-hikdoc-est/{ci}', [HikcentralController::class, 'compararFotosHCKWithDBEstudiante'])->middleware('throttle:20000,1');
     Route::post('sync-hikcentral/{ci}', [HikcentralController::class, 'syncToHikCentral'])->middleware('throttle:20000,1');
     Route::post('sync-hikdoc/{ci}', [HikcentralController::class, 'syncToHikCentralEst'])->middleware('throttle:20000,1');
+    Route::post('sync-hikdoc-update/{ci}', [HikcentralController::class, 'syncToHikCentralUpdateEst'])->middleware('throttle:20000,1');
     Route::get('clear-cache/{ci}', [HikcentralController::class, 'clearDocenteCache'])->middleware('throttle:10000,1');
     Route::get('/get-pending-sync', [HikcentralController::class, 'getPendingSync'])->middleware('throttle:10000,1');
     Route::get('/get-pending-sync-est', [HikcentralController::class, 'getPendingSyncEst'])->middleware('throttle:10000,1');
