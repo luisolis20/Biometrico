@@ -52,6 +52,28 @@ class HikcentralController extends Controller
 
         return base64_encode(hash_hmac('sha256', $stringToSign, $partnerSecret, true));
     }
+    public function generateSignature2($url, $hasBody = true)
+    {
+        $partnerKey = env('HIKCENTRAL_PARTNER_KEY');
+        $partnerSecret = env('HIKCENTRAL_PARTNER_SECRET');
+        $path = parse_url($url, PHP_URL_PATH);
+
+        $method = "POST";
+        $accept = "*/*";
+        // El Content-Type DEBE terminar en un salto de línea si existe
+        $contentType = $hasBody ? "application/json" : "";
+
+        // Estructura oficial: METHOD + \n + ACCEPT + \n + CONTENT-MD5 + \n + CONTENT-TYPE + \n + HEADERS + PATH
+        // Nota los dos saltos de línea después de $accept (uno para MD5 que está vacío)
+        $stringToSign = $method . "\n" .
+            $accept . "\n" .
+            "\n" . // Espacio para Content-MD5 (vacío)
+            $contentType . "\n" .
+            "x-ca-key:" . $partnerKey . "\n" .
+            $path;
+
+        return base64_encode(hash_hmac('sha256', $stringToSign, $partnerSecret, true));
+    }
 
     /**
      * Obtiene la foto de HikCentral y la retorna en Base64
@@ -146,9 +168,8 @@ class HikcentralController extends Controller
             // 1. Definir una llave única para este estado
             $cacheKey = "hik_status_{$personCode}";
 
-            // 2. Intentar obtener de caché o ejecutar la petición
-            // Guardamos el estado por 30 minutos (1800 segundos)
-            $registrado = Cache::remember($cacheKey, 1800, function () use ($personCode) {
+             $statusInfo = Cache::remember($cacheKey, 600, function () use ($personCode) {
+
                 $partnerKey = env('HIKCENTRAL_PARTNER_KEY');
                 $urlInfo = env('HIKCENTRAL_PERSON_INFO_URL');
 
@@ -158,71 +179,91 @@ class HikcentralController extends Controller
                     'x-ca-signature-headers' => 'x-ca-key',
                     'Accept' => '*/*',
                     'Content-Type' => 'application/json'
-                ])->post($urlInfo, ['personCode' => $personCode]);
+                ])->post($urlInfo, ['personCode' => (string)$personCode]);
 
                 $data = $response->json();
 
-                // Retornamos true si existe, false si no. Este valor se guardará en caché.
-                return (isset($data['code']) && $data['code'] === "0" && !empty($data['data']));
+                // Si la respuesta es exitosa y hay datos del usuario
+                if (isset($data['code']) && $data['code'] === "0" && !empty($data['data'])) {
+                    return [
+                        'registrado' => true,
+                        'personId'   => $data['data']['personId'] ?? null,
+                        'mensaje'    => 'Usuario encontrado'
+                    ];
+                }
+
+                // Si no está registrado
+                return [
+                    'registrado' => false,
+                    'personId'   => null,
+                    'mensaje'    => 'No registrado en HikCentral'
+                ];
             });
 
             return response()->json([
-                'registrado' => $registrado,
-                'mensaje' => $registrado ? 'Usuario encontrado' : 'No registrado en HikCentral',
-                'from_cache' => Cache::has($cacheKey) // Opcional: para saber si vino de caché
+                'registrado' => $statusInfo['registrado'],
+                'personId'   => $statusInfo['personId'],
+                'mensaje'    => $statusInfo['mensaje'],
+                'from_cache' => Cache::has($cacheKey)
             ]);
         } catch (\Exception $e) {
             return response()->json([
                 'registrado' => false,
-                'error' => 'Error al verificar status: ' . $e->getMessage()
+                'personId'   => null,
+                'error'      => 'Error al verificar status: ' . $e->getMessage()
             ], 500);
         }
     }
     public function checkHikStatusEst($personCode)
     {
         try {
-            $cacheKey = "hik_data_est_{$personCode}";
+            $cacheKey = "hik_status_est_{$personCode}";
 
-            // Intentamos obtener los datos completos de caché
-            $cachedData = Cache::get($cacheKey);
+            // Reducimos la caché a 10 minutos (600 segundos)
+            // Ahora guardamos un array con la info completa
+            $statusInfo = Cache::remember($cacheKey, 600, function () use ($personCode) {
 
-            if ($cachedData) {
-                return response()->json(array_merge($cachedData, ['from_cache' => true]));
-            }
+                $partnerKey = env('HIKCENTRAL_PARTNER_KEY');
+                $urlInfo = env('HIKCENTRAL_PERSON_INFO_URL');
 
-            $partnerKey = env('HIKCENTRAL_PARTNER_KEY');
-            $urlInfo = env('HIKCENTRAL_PERSON_INFO_URL');
+                $response = Http::withoutVerifying()->withHeaders([
+                    'x-ca-key' => $partnerKey,
+                    'x-ca-signature' => $this->generateSignature($urlInfo),
+                    'x-ca-signature-headers' => 'x-ca-key',
+                    'Accept' => '*/*',
+                    'Content-Type' => 'application/json'
+                ])->post($urlInfo, ['personCode' => (string)$personCode]);
 
-            $response = Http::withoutVerifying()->withHeaders([
-                'x-ca-key' => $partnerKey,
-                'x-ca-signature' => $this->generateSignature($urlInfo),
-                'x-ca-signature-headers' => 'x-ca-key',
-                'Accept' => '*/*',
-                'Content-Type' => 'application/json'
-            ])->post($urlInfo, ['personCode' => (string)$personCode]);
+                $data = $response->json();
 
-            $data = $response->json();
-            $registrado = (isset($data['code']) && $data['code'] === "0" && !empty($data['data']));
+                // Si la respuesta es exitosa y hay datos del usuario
+                if (isset($data['code']) && $data['code'] === "0" && !empty($data['data'])) {
+                    return [
+                        'registrado' => true,
+                        'personId'   => $data['data']['personId'] ?? null,
+                        'mensaje'    => 'Usuario encontrado'
+                    ];
+                }
 
-            // Extraemos el personId real si existe
-            $personIdHC = $registrado ? ($data['data']['personId'] ?? null) : null;
+                // Si no está registrado
+                return [
+                    'registrado' => false,
+                    'personId'   => null,
+                    'mensaje'    => 'No registrado en HikCentral'
+                ];
+            });
 
-            $responseData = [
-                'registrado' => $registrado,
-                'personId'   => $personIdHC, // Este es el UUID que necesitamos
-                'mensaje'    => $registrado ? 'Usuario encontrado' : 'No registrado en HikCentral',
-            ];
-
-            // Guardamos el objeto en caché si fue exitoso
-            if ($registrado) {
-                Cache::put($cacheKey, $responseData, 1800);
-            }
-
-            return response()->json(array_merge($responseData, ['from_cache' => false]));
+            return response()->json([
+                'registrado' => $statusInfo['registrado'],
+                'personId'   => $statusInfo['personId'],
+                'mensaje'    => $statusInfo['mensaje'],
+                'from_cache' => Cache::has($cacheKey)
+            ]);
         } catch (\Exception $e) {
             return response()->json([
                 'registrado' => false,
-                'error' => $e->getMessage()
+                'personId'   => null,
+                'error'      => 'Error al verificar status: ' . $e->getMessage()
             ], 500);
         }
     }
@@ -360,7 +401,7 @@ class HikcentralController extends Controller
                 ->join('factura', 'factura.cedula', '=', 'informacionpersonal.CIInfPer')
                 ->join('ingreso', 'ingreso.CIInfPer', '=', 'informacionpersonal.CIInfPer')
                 ->join('carrera', 'carrera.idCarr', '=', 'ingreso.idcarr')
-                ->where('factura.idper', 126) // Periodo vigente
+                ->where('factura.idper', 125) // Periodo vigente
                 ->where('carrera.StatusCarr', 1)
                 ->whereNotNull('informacionpersonal.fotografia')
                 // --- MISMA LÓGICA DE FILTRADO DE CARRERA ÚLTIMA ---
@@ -415,7 +456,127 @@ class HikcentralController extends Controller
     {
         try {
             $carrerasAExcluir = ['056', '122', '124', '197', '206', '601', '602', '603'];
+            // 1. Obtener datos (Usando el mismo modelo que estudiantesfoto)
+            // 1. Obtener datos con la MISMA lógica de estudiantesfoto
+            $estudiante = informacionpersonal::select(
+                'informacionpersonal.*',
+                'carrera.idCarr',
+                'carrera.codihicenter',
+                'carrera.NombCarr',
+                'carrera.StatusCarr'
+            )
+                ->join('factura', 'factura.cedula', '=', 'informacionpersonal.CIInfPer')
+                ->join('ingreso', 'ingreso.CIInfPer', '=', 'informacionpersonal.CIInfPer')
+                ->join('carrera', 'carrera.idCarr', '=', 'ingreso.idcarr')
+                ->where('informacionpersonal.CIInfPer', $ci) // Filtro por el CI solicitado
+                ->where('factura.idper', 125) // Solo periodo vigente
+                ->where('carrera.StatusCarr', 1)
+                ->whereIn('ingreso.idper', function ($sub) use ($carrerasAExcluir) {
+                    $sub->from('ingreso as i2')
+                        ->selectRaw('MAX(i2.idper)')
+                        ->join('carrera as c2', 'c2.idCarr', '=', 'i2.idcarr')
+                        ->whereColumn('i2.CIInfPer', 'ingreso.CIInfPer')
+                        ->whereNotIn('c2.idCarr', $carrerasAExcluir)
+                        ->where('c2.NombCarr', 'NOT LIKE', '%TRABAJO DE INTEGRACIÓN CURRICULAR%')
+                        ->groupBy('i2.CIInfPer');
+                })
+                ->whereNotIn('carrera.idCarr', $carrerasAExcluir)
+                ->where('carrera.NombCarr', 'NOT LIKE', '%TRABAJO DE INTEGRACIÓN CURRICULAR%')
+                ->first();
+
+            if (!$estudiante || empty($estudiante->fotografia)) {
+                return response()->json(['error' => 'Estudiante o foto no encontrada'], 404);
+            }
+
+            // 2. Preparar datos
+            $fotoBase64 = base64_encode($estudiante->fotografia);
+
+            // Género: HikCentral 1:Masculino, 2:Femenino (Ajustar según tu DB)
+            $gender = ($estudiante->GeneroPer === 'M') ? 1 : 2;
+            // --- Validación y Formateo del orgIndexCode ---
+
+            $departmentCode = $estudiante->codihicenter;
+
+            if (is_null($departmentCode) || $departmentCode === '' || $departmentCode === 0) {
+                return response()->json([
+                    'error' => 'Configuración incompleta en HikCentral',
+                    'message' => "El campo 'codihicenter' no se ha registrado para esta carrera.",
+                    'carrera' => [
+                        'idCarr'     => $estudiante->idCarr,
+                        'NombCarr'   => $estudiante->NombCarr,
+                        'StatusCarr' => $estudiante->StatusCarr,
+                    ]
+                ], 422); // 422 Unprocessable Entity
+            }
+
+            // Convertimos a string y eliminamos cualquier espacio accidental
+            $departmentCode = trim((string)$departmentCode);
+            $body = [
+                "personCode"       => (string)$estudiante->CIInfPer,
+                "personFamilyName" => $estudiante->ApellInfPer . " " . ($estudiante->ApellMatInfPer ?? ""),
+                "personGivenName"  => $estudiante->NombInfPer,
+                "gender"           => $gender,
+                "orgIndexCode"     => $departmentCode, // Código por defecto para Estudiantes
+                "remark"           => "Sincronizado Estudiante SIAD",
+                "email"            => $estudiante->mailInst ?? "",
+                "faces" => [
+                    ["faceData" => $fotoBase64]
+                ],
+                "cards" => [
+                    ["cardNo" => (string)$estudiante->CIInfPer]
+                ],
+                "beginTime" => now()->toIso8601String(),
+                "endTime"   => now()->addYears(5)->toIso8601String(),
+            ];
+
+            $partnerKey = env('HIKCENTRAL_PARTNER_KEY');
+            $urlInfo = env('HIKCENTRAL_ADD_PERSON');
+
+            $response = Http::withoutVerifying()->withHeaders([
+                'x-ca-key' => $partnerKey,
+                'x-ca-signature' => $this->generateSignature($urlInfo),
+                'x-ca-signature-headers' => 'x-ca-key',
+                'Accept' => '*/*',
+                'Content-Type' => 'application/json'
+            ])->post($urlInfo, $body);
+
+
+
+            $resData = $response->json();
+
+            // Verificamos si HikCentral respondió con éxito (code 0)
+            // Usamos == para comparar "0" o 0 indistintamente
+            if ($response->successful() && isset($resData['code']) && $resData['code'] == 0) {
+
+                // 🔥 ACTUALIZACIÓN DE CACHÉ
+                Cache::put("hik_status_est_{$ci}", true, 1800);
+                Cache::forget("foto_blob_{$ci}");
+                Cache::forget("hik_status_est_{$ci}");
+
+                // RETORNO CRÍTICO: Debe llevar 'code' y 'msg' para tu JS
+                return response()->json([
+                    'code' => "0",
+                    'msg'  => "Success",
+                    'data' => $resData['data'] ?? $ci // Retorna el personId de HC o el CI
+                ], 200);
+            } else {
+                // Si HikCentral devuelve error (ej. persona ya existe o error de parámetros)
+                return response()->json([
+                    'code'    => $resData['code'] ?? "500",
+                    'msg'     => $resData['msg'] ?? "Error desconocido en HikCentral",
+                    'details' => $resData
+                ], 400);
+            }
+        } catch (\Throwable $e) {
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
+    }
+    public function syncToHikCentralIndvEst(Request $request, $ci)
+    {
+        try {
+            $carrerasAExcluir = ['056', '122', '124', '197', '206', '601', '602', '603'];
             $idperidod = $request->input('idper');
+
             // 1. Obtener datos (Usando el mismo modelo que estudiantesfoto)
             // 1. Obtener datos con la MISMA lógica de estudiantesfoto
             $estudiante = informacionpersonal::select(
@@ -518,6 +679,13 @@ class HikcentralController extends Controller
                     'msg'  => "Success",
                     'data' => $resData['data'] ?? $ci // Retorna el personId de HC o el CI
                 ], 200);
+            } else if ($resData['code'] == "131") {
+
+                return response()->json([
+                    'code'    =>  "131",
+                    'msg'     => "El estudiante ya está registrado en HikCentral.",
+                    'details' => $resData
+                ], 200);
             } else {
                 // Si HikCentral devuelve error (ej. persona ya existe o error de parámetros)
                 return response()->json([
@@ -535,6 +703,11 @@ class HikcentralController extends Controller
         try {
             $carrerasAExcluir = ['056', '122', '124', '197', '206', '601', '602', '603'];
             $idperidod = $request->input('idper');
+            $personaId = $request->input('personaId');
+            if (!$personaId) {
+                return response()->json(['code' => "400", 'msg' => 'El ID de HikCentral es requerido para actualizar.'], 400);
+            }
+
             // 1. Obtener datos (Usando el mismo modelo que estudiantesfoto)
             // 1. Obtener datos con la MISMA lógica de estudiantesfoto
             $estudiante = informacionpersonal::select(
@@ -570,42 +743,19 @@ class HikcentralController extends Controller
             // 2. Preparar datos
             $fotoBase64 = base64_encode($estudiante->fotografia);
 
-            // Género: HikCentral 1:Masculino, 2:Femenino (Ajustar según tu DB)
-            $gender = ($estudiante->GeneroPer === 'M') ? 1 : 2;
-            // --- Validación y Formateo del orgIndexCode ---
-
-            $departmentCode = $estudiante->codihicenter;
-
-            if (is_null($departmentCode) || $departmentCode === '' || $departmentCode === 0) {
-                return response()->json([
-                    'error' => 'Configuración incompleta en HikCentral',
-                    'message' => "El campo 'codihicenter' no se ha registrado para esta carrera.",
-                    'carrera' => [
-                        'idCarr'     => $estudiante->idCarr,
-                        'NombCarr'   => $estudiante->NombCarr,
-                        'StatusCarr' => $estudiante->StatusCarr,
-                    ]
-                ], 422); // 422 Unprocessable Entity
-            }
-
-            $realPersonId = $request->input('personIdHC');
-
-            if (!$realPersonId) {
-                return response()->json(['msg' => 'Falta el ID de recurso de HikCentral'], 400);
-            }
-            // Convertimos a string y eliminamos cualquier espacio accidental
-            $departmentCode = trim((string)$departmentCode);
             $body = [
-                "personId"   => (string)$realPersonId, // El UUID que llegó desde el front
-                "faceData"   => $fotoBase64,
+                "personId" => (string)$personaId,
+                "faceData" => base64_encode($estudiante->fotografia)
             ];
 
             $partnerKey = env('HIKCENTRAL_PARTNER_KEY');
             $urlInfo = env('HIKCENTRAL_UPDATE_PERSON');
 
+            $signature = $this->generateSignature($urlInfo); // true porque enviamos JSON
+
             $response = Http::withoutVerifying()->withHeaders([
                 'x-ca-key' => $partnerKey,
-                'x-ca-signature' => $this->generateSignature($urlInfo),
+                'x-ca-signature' => $signature,
                 'x-ca-signature-headers' => 'x-ca-key',
                 'Accept' => '*/*',
                 'Content-Type' => 'application/json'
@@ -615,30 +765,79 @@ class HikcentralController extends Controller
 
             $resData = $response->json();
 
-            // Verificamos si HikCentral respondió con éxito (code 0)
-            // Usamos == para comparar "0" o 0 indistintamente
             if ($response->successful() && isset($resData['code']) && $resData['code'] == 0) {
-
-                // 🔥 ACTUALIZACIÓN DE CACHÉ
-                Cache::put("hik_status_est_{$ci}", true, 1800);
+                // Limpiar caché de foto vieja
                 Cache::forget("foto_blob_{$ci}");
 
-                // RETORNO CRÍTICO: Debe llevar 'code' y 'msg' para tu JS
                 return response()->json([
                     'code' => "0",
                     'msg'  => "Success",
-                    'data' => $resData['data'] ?? $ci // Retorna el personId de HC o el CI
+                    'data' => $resData['data']
                 ], 200);
             } else {
-                // Si HikCentral devuelve error (ej. persona ya existe o error de parámetros)
                 return response()->json([
                     'code'    => $resData['code'] ?? "500",
-                    'msg'     => $resData['msg'] ?? "Error desconocido en HikCentral",
+                    'msg'     => $resData['msg'] ?? "Error al actualizar rostro en HikCentral",
                     'details' => $resData
                 ], 400);
             }
         } catch (\Throwable $e) {
             return response()->json(['error' => $e->getMessage()], 500);
+        }
+    }
+     public function syncToHikUpdateCentral(Request $request, $ci)
+    {
+        try {
+            $personaId = $request->input('personaId');
+            if (!$personaId) {
+                return response()->json(['code' => "400", 'msg' => 'El ID de HikCentral es requerido para actualizar.'], 400);
+            }
+            // 1. Obtener datos del docente desde el SIAD
+            $docente = informacionpersonal_D::where('CIInfPer', $ci)->first();
+
+            if (!$docente || empty($docente->fotografia)) {
+                return response()->json(['error' => 'Docente o foto no encontrada'], 404);
+            }
+
+            // 2. Preparar la foto en Base64
+            $fotoBase64 = base64_encode($docente->fotografia);
+
+             $body = [
+                "personId" => (string)$personaId,
+                "faceData" => $fotoBase64
+            ];
+
+            $partnerKey = env('HIKCENTRAL_PARTNER_KEY');
+            $urlInfo = env('HIKCENTRAL_UPDATE_PERSON');
+            $response = Http::withoutVerifying()->withHeaders([
+                'x-ca-key' => $partnerKey,
+                'x-ca-signature' => $this->generateSignature($urlInfo),
+                'x-ca-signature-headers' => 'x-ca-key',
+                'Accept' => '*/*',
+                'Content-Type' => 'application/json'
+            ])->post($urlInfo, $body);
+            $resData = $response->json();
+
+
+            if ($response->successful() && isset($resData['code']) && $resData['code'] == 0) {
+                // Limpiar caché de foto vieja
+                Cache::forget("foto_docente_{$ci}");
+                Cache::forget("hik_status_{$ci}");
+                 Cache::forget("hik_photo_base64_{$ci}");
+                return response()->json([
+                    'code' => "0",
+                    'msg'  => "Success",
+                    'data' => $resData['data']
+                ], 200);
+            } else {
+                return response()->json([
+                    'code'    => $resData['code'] ?? "500",
+                    'msg'     => $resData['msg'] ?? "Error al actualizar rostro en HikCentral",
+                    'details' => $resData
+                ], 400);
+            }
+        } catch (\Throwable $e) {
+            return response()->json(['error' => 'Error interno: ' . $e->getMessage()], 500);
         }
     }
 
