@@ -132,7 +132,7 @@ class InformacionPersonalController extends Controller
                     ->join('factura', 'factura.cedula', '=', 'informacionpersonal.CIInfPer')
                     ->join('ingreso', 'ingreso.CIInfPer', '=', 'informacionpersonal.CIInfPer')
                     ->join('carrera', 'carrera.idCarr', '=', 'ingreso.idcarr')
-                    ->where('factura.idper', 125)
+                    ->where('factura.idper', 126)
                     ->where('carrera.StatusCarr', 1)
                     ->whereIn('ingreso.idper', function ($sub) use ($carrerasAExcluir) {
                         $sub->from('ingreso as i2')

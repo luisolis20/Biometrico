@@ -168,7 +168,7 @@ class HikcentralController extends Controller
             // 1. Definir una llave única para este estado
             $cacheKey = "hik_status_{$personCode}";
 
-             $statusInfo = Cache::remember($cacheKey, 600, function () use ($personCode) {
+            $statusInfo = Cache::remember($cacheKey, 600, function () use ($personCode) {
 
                 $partnerKey = env('HIKCENTRAL_PARTNER_KEY');
                 $urlInfo = env('HIKCENTRAL_PERSON_INFO_URL');
@@ -362,9 +362,12 @@ class HikcentralController extends Controller
 
             if ($response->successful() && isset($resData['code']) && $resData['code'] == 0) {
                 // Dentro de syncToHikCentral, después del éxito:
-                Cache::forget("hik_status_{$ci}");
-                Cache::forget("foto_docente_{$ci}");
+                
                 Cache::put("hik_status_{$ci}", true, 1800);
+                Cache::forget("foto_docente_{$ci}");
+                Cache::forget("hik_status_{$ci}");
+                Cache::forget("hik_photo_base64_{$ci}");
+                Cache::forget("docente_individual_{$ci}");
                 // También borrar la caché de la lista general para que se refresque el frontend
                 Cache::flush();
 
@@ -373,6 +376,13 @@ class HikcentralController extends Controller
                     'code' => "0",
                     'msg'  => "Success",
                     'data' => $resData['data'] ?? $ci // Retorna el personId de HC o el CI
+                ], 200);
+            }else if ($resData['code'] == "131") {
+
+                return response()->json([
+                    'code'    =>  "131",
+                    'msg'     => "El personal ya está registrado en HikCentral.",
+                    'details' => $resData
                 ], 200);
             } else {
                 // Si HikCentral devuelve error (ej. persona ya existe o error de parámetros)
@@ -396,12 +406,15 @@ class HikcentralController extends Controller
                 'informacionpersonal.CIInfPer',
                 'informacionpersonal.NombInfPer',
                 'informacionpersonal.ApellInfPer',
-                'informacionpersonal.ApellMatInfPer'
+                'informacionpersonal.ApellMatInfPer',
+                'informacionpersonal.mailInst',
+                'carrera.NombCarr',
+                'carrera.idCarr'
             )
                 ->join('factura', 'factura.cedula', '=', 'informacionpersonal.CIInfPer')
                 ->join('ingreso', 'ingreso.CIInfPer', '=', 'informacionpersonal.CIInfPer')
                 ->join('carrera', 'carrera.idCarr', '=', 'ingreso.idcarr')
-                ->where('factura.idper', 125) // Periodo vigente
+                ->where('factura.idper', 126) // Periodo vigente
                 ->where('carrera.StatusCarr', 1)
                 ->whereNotNull('informacionpersonal.fotografia')
                 // --- MISMA LÓGICA DE FILTRADO DE CARRERA ÚLTIMA ---
@@ -427,7 +440,10 @@ class HikcentralController extends Controller
                 'informacionpersonal.CIInfPer',
                 'informacionpersonal.NombInfPer',
                 'informacionpersonal.ApellInfPer',
-                'informacionpersonal.ApellMatInfPer'
+                'informacionpersonal.ApellMatInfPer',
+                'informacionpersonal.mailInst',
+                'carrera.NombCarr',
+                'carrera.idCarr'
             )->get();
 
             $pendientes = [];
@@ -469,7 +485,7 @@ class HikcentralController extends Controller
                 ->join('ingreso', 'ingreso.CIInfPer', '=', 'informacionpersonal.CIInfPer')
                 ->join('carrera', 'carrera.idCarr', '=', 'ingreso.idcarr')
                 ->where('informacionpersonal.CIInfPer', $ci) // Filtro por el CI solicitado
-                ->where('factura.idper', 125) // Solo periodo vigente
+                ->where('factura.idper', 126) // Solo periodo vigente
                 ->where('carrera.StatusCarr', 1)
                 ->whereIn('ingreso.idper', function ($sub) use ($carrerasAExcluir) {
                     $sub->from('ingreso as i2')
@@ -552,12 +568,27 @@ class HikcentralController extends Controller
                 Cache::put("hik_status_est_{$ci}", true, 1800);
                 Cache::forget("foto_blob_{$ci}");
                 Cache::forget("hik_status_est_{$ci}");
+                Cache::forget("estudiante_individual_{$ci}");
 
                 // RETORNO CRÍTICO: Debe llevar 'code' y 'msg' para tu JS
                 return response()->json([
                     'code' => "0",
                     'msg'  => "Success",
                     'data' => $resData['data'] ?? $ci // Retorna el personId de HC o el CI
+                ], 200);
+            } else if ($resData['code'] == "131") {
+
+                return response()->json([
+                    'code'    =>  "131",
+                    'msg'     => "El estudiante ya está registrado en HikCentral.",
+                    'details' => $resData
+                ], 200);
+            }
+            else if($resData['code'] == "128"){
+                return response()->json([
+                    'code'    =>  "128",
+                    'msg'     => "El archivo de la foto no es compatible con HikCentral.",
+                    'details' => $resData
                 ], 200);
             } else {
                 // Si HikCentral devuelve error (ej. persona ya existe o error de parámetros)
@@ -670,8 +701,10 @@ class HikcentralController extends Controller
             if ($response->successful() && isset($resData['code']) && $resData['code'] == 0) {
 
                 // 🔥 ACTUALIZACIÓN DE CACHÉ
-                Cache::put("hik_status_est_{$ci}", true, 1800);
+                Cache::put("hik_status_est_{$ci}", true, 200);
                 Cache::forget("foto_blob_{$ci}");
+                Cache::forget("hik_status_est_{$ci}");
+                Cache::forget("estudiante_individual_{$ci}");
 
                 // RETORNO CRÍTICO: Debe llevar 'code' y 'msg' para tu JS
                 return response()->json([
@@ -686,7 +719,14 @@ class HikcentralController extends Controller
                     'msg'     => "El estudiante ya está registrado en HikCentral.",
                     'details' => $resData
                 ], 200);
-            } else {
+            }else if($resData['code'] == "128"){
+                return response()->json([
+                    'code'    =>  "128",
+                    'msg'     => "El archivo de la foto no es compatible con HikCentral.",
+                    'details' => $resData
+                ], 200);
+            }
+             else {
                 // Si HikCentral devuelve error (ej. persona ya existe o error de parámetros)
                 return response()->json([
                     'code'    => $resData['code'] ?? "500",
@@ -767,12 +807,21 @@ class HikcentralController extends Controller
 
             if ($response->successful() && isset($resData['code']) && $resData['code'] == 0) {
                 // Limpiar caché de foto vieja
+                Cache::put("hik_status_est_{$ci}", true, 200);
                 Cache::forget("foto_blob_{$ci}");
+                Cache::forget("hik_status_est_{$ci}");
+                Cache::forget("hik_photo_base64_{$ci}");
 
                 return response()->json([
                     'code' => "0",
                     'msg'  => "Success",
                     'data' => $resData['data']
+                ], 200);
+            } else if($resData['code'] == "128"){
+                return response()->json([
+                    'code'    =>  "128",
+                    'msg'     => "El archivo de la foto no es compatible con HikCentral.",
+                    'details' => $resData
                 ], 200);
             } else {
                 return response()->json([
@@ -785,7 +834,7 @@ class HikcentralController extends Controller
             return response()->json(['error' => $e->getMessage()], 500);
         }
     }
-     public function syncToHikUpdateCentral(Request $request, $ci)
+    public function syncToHikUpdateCentral(Request $request, $ci)
     {
         try {
             $personaId = $request->input('personaId');
@@ -802,7 +851,7 @@ class HikcentralController extends Controller
             // 2. Preparar la foto en Base64
             $fotoBase64 = base64_encode($docente->fotografia);
 
-             $body = [
+            $body = [
                 "personId" => (string)$personaId,
                 "faceData" => $fotoBase64
             ];
@@ -823,11 +872,18 @@ class HikcentralController extends Controller
                 // Limpiar caché de foto vieja
                 Cache::forget("foto_docente_{$ci}");
                 Cache::forget("hik_status_{$ci}");
-                 Cache::forget("hik_photo_base64_{$ci}");
+                Cache::forget("hik_photo_base64_{$ci}");
+                Cache::forget("docente_individual_{$ci}");
                 return response()->json([
                     'code' => "0",
                     'msg'  => "Success",
                     'data' => $resData['data']
+                ], 200);
+            } else if($resData['code'] == "128"){
+                return response()->json([
+                    'code'    =>  "128",
+                    'msg'     => "El archivo de la foto no es compatible con HikCentral.",
+                    'details' => $resData
                 ], 200);
             } else {
                 return response()->json([
