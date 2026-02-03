@@ -85,7 +85,7 @@ class HikcentralController extends Controller
             $cacheKey = "hik_photo_base64_{$personCode}";
 
             // Intentamos obtener el base64 de la caché por 2 horas (7200 segundos)
-            $fotoBase64 = Cache::remember($cacheKey, 7200, function () use ($personCode) {
+            $fotoBase64 = Cache::remember($cacheKey, 120, function () use ($personCode) {
                 $partnerKey = env('HIKCENTRAL_PARTNER_KEY');
 
                 // 1. Obtener la información de la persona (para sacar el picUri)
@@ -168,7 +168,7 @@ class HikcentralController extends Controller
             // 1. Definir una llave única para este estado
             $cacheKey = "hik_status_{$personCode}";
 
-            $statusInfo = Cache::remember($cacheKey, 600, function () use ($personCode) {
+            $statusInfo = Cache::remember($cacheKey, 2, function () use ($personCode) {
 
                 $partnerKey = env('HIKCENTRAL_PARTNER_KEY');
                 $urlInfo = env('HIKCENTRAL_PERSON_INFO_URL');
@@ -221,7 +221,7 @@ class HikcentralController extends Controller
 
             // Reducimos la caché a 10 minutos (600 segundos)
             // Ahora guardamos un array con la info completa
-            $statusInfo = Cache::remember($cacheKey, 600, function () use ($personCode) {
+            $statusInfo = Cache::remember($cacheKey, 60, function () use ($personCode) {
 
                 $partnerKey = env('HIKCENTRAL_PARTNER_KEY');
                 $urlInfo = env('HIKCENTRAL_PERSON_INFO_URL');
@@ -811,6 +811,7 @@ class HikcentralController extends Controller
                 Cache::forget("foto_blob_{$ci}");
                 Cache::forget("hik_status_est_{$ci}");
                 Cache::forget("hik_photo_base64_{$ci}");
+                Cache::forget("estudiante_individual_{$ci}");
 
                 return response()->json([
                     'code' => "0",

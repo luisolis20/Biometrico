@@ -228,7 +228,7 @@ class InformacionPersonalController extends Controller
             $cacheKey = "estudiante_individual_{$ci}";
             $idperidod = $request->input('idper');
             // 2. Intentar recuperar de caché o buscar en la DB
-            $estudiante = Cache::remember($cacheKey, now()->addMinutes(2), function () use ($ci, $idperidod) {
+            $estudiante = Cache::remember($cacheKey, now()->addMinutes(1), function () use ($ci, $idperidod) {
                 $carrerasAExcluir = ['056', '122', '124', '197', '206', '601', '602', '603'];
 
                 $item = informacionpersonal::select(
