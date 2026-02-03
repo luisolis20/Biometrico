@@ -214,7 +214,7 @@ class InformacionPersonalDController extends Controller
         try {
             // Cacheamos la foto por 60 minutos para evitar consultas repetitivas
             // Usamos el CI como llave de cache
-            $fotoData = Cache::remember("foto_docente_{$ci}", 200, function () use ($ci) {
+            $fotoData = Cache::remember("foto_docente_{$ci}", 600, function () use ($ci) {
                 $persona = informacionpersonal_D::where('CIInfPer', $ci)
                     ->select('fotografia')
                     ->first();
