@@ -183,7 +183,7 @@ class InformacionPersonalController extends Controller
                     // Verificamos si ya existe el estado de HikCentral en la caché individual
                     // Esto es opcional, pero ayuda a que si ya se verificó, el valor persista
                     $ci = $item->CIInfPer;
-                    $statusHC = Cache::get("hik_status_{$ci}");
+                    $statusHC = Cache::get("hik_status_est_{$ci}");
 
                     return [
                         'CIInfPer'         => $item->CIInfPer,
@@ -221,7 +221,7 @@ class InformacionPersonalController extends Controller
             ], 500);
         }
     }
-     public function getEstudianteByCI(Request $request, $ci)
+    public function getEstudianteByCI(Request $request, $ci)
     {
         try {
             // 1. Crear una llave de caché específica para este CI
@@ -232,30 +232,30 @@ class InformacionPersonalController extends Controller
                 $carrerasAExcluir = ['056', '122', '124', '197', '206', '601', '602', '603'];
 
                 $item = informacionpersonal::select(
-                'informacionpersonal.*',
-                'carrera.idCarr',
-                'carrera.codihicenter',
-                'carrera.NombCarr',
-                'carrera.StatusCarr'
-            )
-                ->join('factura', 'factura.cedula', '=', 'informacionpersonal.CIInfPer')
-                ->join('ingreso', 'ingreso.CIInfPer', '=', 'informacionpersonal.CIInfPer')
-                ->join('carrera', 'carrera.idCarr', '=', 'ingreso.idcarr')
-                ->where('informacionpersonal.CIInfPer', $ci) // Filtro por el CI solicitado
-                ->where('factura.idper', $idperidod) // Solo periodo vigente
-                ->where('carrera.StatusCarr', 1)
-                ->whereIn('ingreso.idper', function ($sub) use ($carrerasAExcluir) {
-                    $sub->from('ingreso as i2')
-                        ->selectRaw('MAX(i2.idper)')
-                        ->join('carrera as c2', 'c2.idCarr', '=', 'i2.idcarr')
-                        ->whereColumn('i2.CIInfPer', 'ingreso.CIInfPer')
-                        ->whereNotIn('c2.idCarr', $carrerasAExcluir)
-                        ->where('c2.NombCarr', 'NOT LIKE', '%TRABAJO DE INTEGRACIÓN CURRICULAR%')
-                        ->groupBy('i2.CIInfPer');
-                })
-                ->whereNotIn('carrera.idCarr', $carrerasAExcluir)
-                ->where('carrera.NombCarr', 'NOT LIKE', '%TRABAJO DE INTEGRACIÓN CURRICULAR%')
-                ->first();
+                    'informacionpersonal.*',
+                    'carrera.idCarr',
+                    'carrera.codihicenter',
+                    'carrera.NombCarr',
+                    'carrera.StatusCarr'
+                )
+                    ->join('factura', 'factura.cedula', '=', 'informacionpersonal.CIInfPer')
+                    ->join('ingreso', 'ingreso.CIInfPer', '=', 'informacionpersonal.CIInfPer')
+                    ->join('carrera', 'carrera.idCarr', '=', 'ingreso.idcarr')
+                    ->where('informacionpersonal.CIInfPer', $ci) // Filtro por el CI solicitado
+                    ->where('factura.idper', $idperidod) // Solo periodo vigente
+                    ->where('carrera.StatusCarr', 1)
+                    ->whereIn('ingreso.idper', function ($sub) use ($carrerasAExcluir) {
+                        $sub->from('ingreso as i2')
+                            ->selectRaw('MAX(i2.idper)')
+                            ->join('carrera as c2', 'c2.idCarr', '=', 'i2.idcarr')
+                            ->whereColumn('i2.CIInfPer', 'ingreso.CIInfPer')
+                            ->whereNotIn('c2.idCarr', $carrerasAExcluir)
+                            ->where('c2.NombCarr', 'NOT LIKE', '%TRABAJO DE INTEGRACIÓN CURRICULAR%')
+                            ->groupBy('i2.CIInfPer');
+                    })
+                    ->whereNotIn('carrera.idCarr', $carrerasAExcluir)
+                    ->where('carrera.NombCarr', 'NOT LIKE', '%TRABAJO DE INTEGRACIÓN CURRICULAR%')
+                    ->first();
 
                 if (!$item) {
                     return null;
@@ -295,7 +295,206 @@ class InformacionPersonalController extends Controller
     {
         try {
             // Cacheamos la foto por 60 minutos para ahorrar lecturas a la DB
-            $fotoData = Cache::remember("foto_blob_{$ci}", 3600, function () use ($ci) {
+            $fotoData = Cache::remember("foto_blob_{$ci}", 120, function () use ($ci) {
+                $persona = informacionpersonal::where('CIInfPer', $ci)
+                    ->select('fotografia')
+                    ->first();
+                return $persona ? $persona->fotografia : null;
+            });
+
+            if (!$fotoData) {
+                return response()->json(['error' => 'No encontrada'], 404);
+            }
+
+            $mime = 'image/jpeg';
+            if (extension_loaded('fileinfo')) {
+                $finfo = finfo_open(FILEINFO_MIME_TYPE);
+                $mime = finfo_buffer($finfo, $fotoData);
+                finfo_close($finfo);
+            }
+
+            return response($fotoData, 200)
+                ->header('Content-Type', $mime)
+                ->header('Cache-Control', 'public, max-age=3600'); // Cache de navegador
+
+        } catch (\Throwable $e) {
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
+    }
+    //Estudiantes del pre
+    public function getEstudiantesPre(Request $request)
+    {
+        try {
+            // 1. Capturar parámetros para la llave de caché
+            $page = $request->input('page', 1);
+            $perPage = min($request->input('per_page', 20), 50);
+            $searchQuery = $request->input('search_query', '');
+            $carreraFilter = $request->input('carrera_name', 'Todos');
+            // 2. Crear una llave única basada en los parámetros (MD5 para la búsqueda por seguridad/longitud)
+            $cacheKey = "estudiantes_pre_page_{$page}_limit_{$perPage}_search_" . md5($searchQuery) . "_carrera_" . str_replace(' ', '_', $carreraFilter);
+            // 3. Intentar obtener de caché o ejecutar la consulta (10 minutos de vida)
+            // 3. Intentar obtener de caché o ejecutar la consulta (10 minutos de vida)
+            $responseData = Cache::remember($cacheKey, now()->addMinutes(10), function () use ($perPage, $searchQuery, $carreraFilter) {
+
+
+
+                $query = informacionpersonal::select(
+                    'informacionpersonal.CIInfPer',
+                    'informacionpersonal.NombInfPer',
+                    'informacionpersonal.ApellInfPer',
+                    'informacionpersonal.ApellMatInfPer',
+                    'informacionpersonal.mailInst',
+                    'ingreso_inscripcionsnnas.idCarreraSeleccionada',
+                    'ingreso_inscripcionsnnas.idper',
+                    'ingreso_inscripcionsnnas.NombCarr',
+                    'ingreso_inscripcionsnnas.laboratorio_examen',
+
+                )
+                    ->join('ingreso_inscripcionsnnas', 'ingreso_inscripcionsnnas.CIInfPer', '=', 'informacionpersonal.CIInfPer')
+                    ->where('ingreso_inscripcionsnnas.idper', 126)
+                    ->whereNotNull('informacionpersonal.fotografia')
+                    ->whereNotNull('ingreso_inscripcionsnnas.laboratorio_examen');
+
+                // Filtrado por búsqueda (Cédula o Nombres)
+                if (!empty($searchQuery)) {
+                    $query->where(function ($q) use ($searchQuery) {
+                        $q->where('informacionpersonal.CIInfPer', 'LIKE', "%{$searchQuery}%")
+                            ->orWhere('informacionpersonal.NombInfPer', 'LIKE', "%{$searchQuery}%")
+                            ->orWhere('informacionpersonal.ApellInfPer', 'LIKE', "%{$searchQuery}%")
+                            ->orWhere('informacionpersonal.ApellMatInfPer', 'LIKE', "%{$searchQuery}%");
+                    });
+                }
+
+                // Filtrado por Carrera
+                if (!empty($carreraFilter) && $carreraFilter !== 'Todos') {
+                    $query->where('ingreso_inscripcionsnnas.idCarreraSeleccionada', $carreraFilter);
+                }
+
+                $query->groupBy(
+                    'informacionpersonal.CIInfPer',
+                    'informacionpersonal.NombInfPer',
+                    'informacionpersonal.ApellInfPer',
+                    'informacionpersonal.ApellMatInfPer',
+                    'informacionpersonal.mailInst',
+                    'ingreso_inscripcionsnnas.idCarreraSeleccionada',
+                    'ingreso_inscripcionsnnas.idper',
+                    'ingreso_inscripcionsnnas.NombCarr',
+                    'ingreso_inscripcionsnnas.laboratorio_examen',
+                );
+
+                $data = $query->paginate($perPage);
+
+                if ($data->isEmpty()) {
+                    return ['data' => [], 'pagination' => null];
+                }
+
+                // Transformar la colección para el frontend
+                $items = $data->getCollection()->map(function ($item) {
+                    // Verificamos si ya existe el estado de HikCentral en la caché individual
+                    // Esto es opcional, pero ayuda a que si ya se verificó, el valor persista
+                    $ci = $item->CIInfPer;
+                    $statusHC = Cache::get("hik_status_pre_est_{$ci}");
+
+                    return [
+                        'CIInfPer'         => $item->CIInfPer,
+                        'NombInfPer'       => $item->NombInfPer,
+                        'ApellInfPer'      => $item->ApellInfPer,
+                        'ApellMatInfPer'   => $item->ApellMatInfPer,
+                        'mailInst'         => $item->mailInst,
+                        'NombCarr'         => $item->NombCarr,
+                        'hasPhoto'         => true,
+                        'estaRegistradoHC' => $statusHC // null, true o false
+                    ];
+                });
+
+                return [
+                    'data' => $items,
+                    'pagination' => [
+                        'current_page' => $data->currentPage(),
+                        'per_page'     => $data->perPage(),
+                        'total'        => $data->total(),
+                        'last_page'    => $data->lastPage(),
+                    ]
+                ];
+            });
+
+            // 4. Retornar respuesta
+            if (empty($responseData['data'])) {
+                return response()->json(['data' => [], 'message' => 'No se encontraron estudiantes'], 200);
+            }
+
+            return response()->json($responseData, 200);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'error' => true,
+                'message' => 'Error interno: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+    public function getEstudiantesPreCI(Request $request, $ci)
+    {
+        try {
+            // 1. Crear una llave de caché específica para este CI
+            $cacheKey = "estudiante_pre_individual_{$ci}";
+            // 2. Intentar recuperar de caché o buscar en la DB
+            $estudiante = Cache::remember($cacheKey, now()->addMinutes(1), function () use ($ci) {
+
+                $item = informacionpersonal::select(
+                    'informacionpersonal.CIInfPer',
+                    'informacionpersonal.NombInfPer',
+                    'informacionpersonal.ApellInfPer',
+                    'informacionpersonal.ApellMatInfPer',
+                    'informacionpersonal.mailInst',
+                    'ingreso_inscripcionsnnas.idCarreraSeleccionada',
+                    'ingreso_inscripcionsnnas.idper',
+                    'ingreso_inscripcionsnnas.NombCarr',
+                    'ingreso_inscripcionsnnas.laboratorio_examen',
+                )
+                    ->join('ingreso_inscripcionsnnas', 'ingreso_inscripcionsnnas.CIInfPer', '=', 'informacionpersonal.CIInfPer')
+                    ->where('ingreso_inscripcionsnnas.idper', 126)
+                    ->whereNotNull('informacionpersonal.fotografia')
+                    ->whereNotNull('ingreso_inscripcionsnnas.laboratorio_examen')
+                    ->where('informacionpersonal.CIInfPer', $ci) 
+                    ->first();
+
+                if (!$item) {
+                    return null;
+                }
+
+                // 3. Transformar el modelo a un array plano (limpio para el front)
+                return [
+                    'CIInfPer'         => $item->CIInfPer,
+                    'NombInfPer'       => $item->NombInfPer,
+                    'ApellInfPer'      => $item->ApellInfPer,
+                    'ApellMatInfPer'   => $item->ApellMatInfPer,
+                    'mailInst'         => $item->mailInst,
+                    'NombCarr'       => $item->NombCarr,
+                    'hasPhoto'         => true,
+                    'estaRegistradoHC' => null // Cruce con el estado de HikCentral
+                ];
+            });
+
+            // 4. Validar si se encontró el docente
+            if (!$estudiante) {
+                return response()->json([
+                    'error' => true,
+                    'message' => "No se encontró el estudiante con CI: {$ci}"
+                ], 404);
+            }
+
+            return response()->json($estudiante, 200);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'error' => true,
+                'message' => 'Error al obtener estudiante: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+    public function getPreFotografia2($ci)
+    {
+        try {
+            // Cacheamos la foto por 60 minutos para ahorrar lecturas a la DB
+            $fotoData = Cache::remember("foto_pre_blob_{$ci}", 420, function () use ($ci) {
                 $persona = informacionpersonal::where('CIInfPer', $ci)
                     ->select('fotografia')
                     ->first();

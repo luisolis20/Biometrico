@@ -34,11 +34,11 @@ class AuthController extends Controller
     
         $CIInfPer = $request->input('LoginUsu');
         $codigo_dactilar = $request->input('ClaveUsu');
-        $idperfil = 'sotics';
+        $perfilesPermitidos = ['sotics', 'atics','sa'];
         $user = User::select('ciinfper', 'NombUsu','LoginUsu', 'email', 'idperfil', 'ClaveUsu', 'StatusUsu')
             ->where('LoginUsu', $CIInfPer)
             ->where('StatusUsu', 1)
-            ->where('idperfil','=',$idperfil)
+            ->whereIn('idperfil', $perfilesPermitidos)
             ->first();
        
         if ($user) {
