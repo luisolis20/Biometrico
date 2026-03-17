@@ -456,6 +456,7 @@ class HikcentralController extends Controller
             $gender = ($docente->GeneroPer === 'M') ? 2 : 1;
 
             $departmentCode = "1";
+            $apellidos = "";
 
             if ($docente->TipoInfPer === "D") {
                 $departmentCode = "4";
@@ -466,11 +467,20 @@ class HikcentralController extends Controller
             } else if ($docente->TipoInfPer === "TDO") {
                 $departmentCode = "5";
             }
+            if ($docente->ApellMatInfPer === "S/M" || $docente->ApellMatInfPer === "") {
+                $apellidos = $docente->ApellMatInfPer;
+            }
+            else if ($docente->ApellMatInfPer === "S/M" || $docente->ApellMatInfPer === "" || $docente->ApellMatInfPer === "-") {
+                $apellidos = $docente->ApellInfPer;
+            }
+            else {
+                $apellidos = $docente->ApellInfPer . " " . $docente->ApellMatInfPer;
+            }
 
             // 4. Construir el JSON para HikCentral
             $body = [
                 "personCode"       => (string)$docente->CIInfPer,
-                "personFamilyName" => $docente->ApellInfPer . " " . ($docente->ApellMatInfPer ?? ""),
+                "personFamilyName" => $apellidos,
                 "personGivenName"  => $docente->NombInfPer,
                 "gender"           => $gender,
                 "orgIndexCode"     => $departmentCode, // Ajustar según tu estructura en HikCentral
