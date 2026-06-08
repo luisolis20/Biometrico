@@ -34,11 +34,18 @@ Route::prefix('biometrico')->group(function () {
     Route::get('fotografiaHK/{ci}', [InformacionPersonalController::class, 'getFotografiaHC'])->middleware('throttle:10000,1');
     Route::get('fotografiadoc/{ci}', [InformacionPersonalDController::class, 'getFotografia'])->middleware('throttle:5000,1');
     Route::get('getindivDoc/{ci}', [InformacionPersonalDController::class, 'getDocenteByCI'])->middleware('throttle:5000,1');
+    Route::get('getindivDocUTLVTE/{ci}', [InformacionPersonalDController::class, 'getPersonaUTLVTEByCI'])->middleware('throttle:5000,1');
     Route::get('getindivEst/{ci}', [InformacionPersonalController::class, 'getEstudianteByCI'])->middleware('throttle:10000,1');
     Route::get('getindivEst-pre-est/{ci}', [InformacionPersonalController::class, 'getEstudiantesPreCI'])->middleware('throttle:10000,1');
     Route::get('gethick/{ci}', [HikcentralController::class, 'testPhotoBase64'])->middleware('throttle:10000,1');
     Route::get('gethick-pre-est/{ci}', [HikcentralController::class, 'testPhotoPreEstBase64'])->middleware('throttle:10000,1');
     Route::get('get-periodos-rec', [PeriodoLectivoController::class, 'getActivos'])->middleware('throttle:10000,1');
+    Route::get('devices', [HikcentralController::class, 'getAllAcsDevices'])->middleware('throttle:10000,1');
+    Route::get('search-devices/search', [HikcentralController::class, 'searchAcsDevice'])->middleware('throttle:10000,1');
+    Route::get('real-time-events', [HikcentralController::class, 'getRealTimeEvents'])->middleware('throttle:10000,1');
+    Route::get('asistencia', [HikcentralController::class, 'getAllAsistence'])->middleware('throttle:10000,1');
+    Route::post('attendance-report', [HikcentralController::class, 'getAttendanceReport'])->middleware('throttle:10000,1');
+    
 
 
     Route::get('getperson/{ci}', [HikcentralController::class, 'checkHikStatus'])->middleware('throttle:1000000,1');

@@ -12,6 +12,8 @@ use Illuminate\Support\Facades\Response;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
+use Carbon\Carbon;
 
 class HikcentralController extends Controller
 {
@@ -135,7 +137,7 @@ class HikcentralController extends Controller
             return response()->json(['error' => $e->getMessage()], 500);
         }
     }
-     public function getHikPreEstPhotoBase64($personCode)
+    public function getHikPreEstPhotoBase64($personCode)
     {
         try {
             // Creamos una llave única para la foto de HikCentral
@@ -469,11 +471,9 @@ class HikcentralController extends Controller
             }
             if ($docente->ApellMatInfPer === "S/M" || $docente->ApellMatInfPer === "") {
                 $apellidos = $docente->ApellMatInfPer;
-            }
-            else if ($docente->ApellMatInfPer === "S/M" || $docente->ApellMatInfPer === "" || $docente->ApellMatInfPer === "-") {
+            } else if ($docente->ApellMatInfPer === "S/M" || $docente->ApellMatInfPer === "" || $docente->ApellMatInfPer === "-") {
                 $apellidos = $docente->ApellInfPer;
-            }
-            else {
+            } else {
                 $apellidos = $docente->ApellInfPer . " " . $docente->ApellMatInfPer;
             }
 
@@ -1422,7 +1422,7 @@ class HikcentralController extends Controller
                 Cache::forget("hik_photo_base64_{$ci}");
                 Cache::forget("docente_individual_{$ci}");
                 Cache::forget("compare_result_{$ci}");
-                
+
                 return response()->json([
                     'code' => "0",
                     'msg'  => "Success",
@@ -1610,7 +1610,7 @@ class HikcentralController extends Controller
             // 1. Definir llave única para la comparación de estudiantes
             $cacheKey = "compare_pre_estudiante_result_{$ci}";
 
-           // 2. Cachear el resultado por 30 minutos
+            // 2. Cachear el resultado por 30 minutos
             $resultado = Cache::remember($cacheKey, 120, function () use ($ci) {
 
                 // Obtener foto de HikCentral (debe retornar el base64 de la API de Hik)
@@ -1713,5 +1713,149 @@ class HikcentralController extends Controller
         Cache::forget("hik_photo_base64_{$ci}");
 
         return response()->json(['message' => 'Caché limpiada correctamente']);
+    }
+    public function getAllAcsDevices($pageNo = 1, $pageSize = 100)
+    {
+        try {
+            $url = env('HIKCENTRAL_GET_ALL_DEVICES');
+            $partnerKey = env('HIKCENTRAL_PARTNER_KEY');
+
+            $body = [
+                'pageNo' => (int)$pageNo,
+                'pageSize' => (int)$pageSize
+            ];
+
+            $response = Http::withoutVerifying()->withHeaders([
+                'x-ca-key' => $partnerKey,
+                'x-ca-signature' => $this->generateSignature($url),
+                'x-ca-signature-headers' => 'x-ca-key',
+                'Accept' => '*/*',
+                'Content-Type' => 'application/json'
+            ])->post($url, $body);
+
+            return $response->json();
+        } catch (\Exception $e) {
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
+    }
+    public function getAttendanceReport(Request $request)
+    {
+        // Validamos los parámetros de entrada indispensables
+        $request->validate([
+            'personCode' => 'required|string',
+            'personID'   => 'required',
+            'beginTime'  => 'nullable|string', // Formato esperado: Y-m-d (Ej: 2026-06-05)
+            'endTime'    => 'nullable|string',   // Formato esperado: Y-m-d (Ej: 2026-06-05)
+        ]);
+
+        $personCode = $request->input('personCode');
+        $personID = $request->input('personID');
+        $partnerKey = env('HIKCENTRAL_PARTNER_KEY');
+        $timezoneOffset = ' 08:00';
+
+        // 2. Forzamos el formato estricto: YYYY-MM-DDTHH:mm:ss más el offset
+        $beginTime = $request->input('beginTime')
+            ? Carbon::parse($request->input('beginTime'))->startOfDay()->format('Y-m-d\TH:i:s') . $timezoneOffset
+            : Carbon::now()->startOfDay()->format('Y-m-d\TH:i:s') . $timezoneOffset;
+
+        $endTime = $request->input('endTime')
+            ? Carbon::parse($request->input('endTime'))->endOfDay()->format('Y-m-d\TH:i:s') . $timezoneOffset
+            : Carbon::now()->endOfDay()->format('Y-m-d\TH:i:s') . $timezoneOffset;
+
+        try {
+            // PASO 1: Obtener los datos base de la persona desde HikCentral
+            $urlInfo = env('HIKCENTRAL_PERSON_INFO_URL');
+
+            $infoResponse = Http::withoutVerifying()->withHeaders([
+                'x-ca-key' => $partnerKey,
+                'x-ca-signature' => $this->generateSignature($urlInfo),
+                'x-ca-signature-headers' => 'x-ca-key',
+                'Accept' => '*/*',
+                'Content-Type' => 'application/json'
+            ])->post($urlInfo, ['personCode' => $personCode]);
+
+            $personData = $infoResponse->json();
+
+            // Verificamos si la API de HikCentral respondió con éxito y data válida
+            if (!isset($personData['data']) || empty($personData['data'])) {
+                return response()->json([
+                    'error' => 'No se encontró información del empleado con el código provisto en HikCentral.'
+                ], 404);
+            }
+
+            // Extraemos las IDs de control que exige de forma estricta el endpoint de asistencia
+            $personId     = $personData['data']['personId'] ?? null;
+            $orgIndexCode = $personData['data']['orgIndexCode'] ?? null;
+            $personName   = $personData['data']['personName'] ?? '';
+
+            if (!$personId) {
+                return response()->json(['error' => 'La persona no cuenta con un ID válido asignado.'], 422);
+            }
+
+            // PASO 2: Construir el Payload estructurado para la API de Asistencia
+            $urlAttendance = env('HIKCENTRAL_ATTENDANCE_REPORT_URL');
+
+            $payload = [
+                "attendanceReportRequest" => [
+                    "pageNo" => 1,
+                    "pageSize" => 100,
+                    "queryInfo" => [
+                        "personName"   => $personName,
+                        "personCode"   => $personCode,
+                        "personID"     => [(int)$personID],      // CORREGIDO: Forzado a entero (Number) según documentación
+                        "orgIndexCode" => [(int)$orgIndexCode], // CORREGIDO: Forzado a entero (Number) según documentación
+                        "beginTime"    => $beginTime,
+                        "endTime"      => $endTime,
+                        "personState"  => 1, // 1 representa empleados activos/normales
+                        "sortInfo"     => [
+                            "sortField" => 3,
+                            "sortType"  => 2
+                        ]
+                    ]
+                ]
+            ];
+
+            // PASO 3: Consumir el endpoint de Asistencia
+            $attendanceResponse = Http::withoutVerifying()->withHeaders([
+                'x-ca-key' => $partnerKey,
+                'x-ca-signature' => $this->generateSignature($urlAttendance),
+                'x-ca-signature-headers' => 'x-ca-key',
+                'Accept' => '*/*',
+                'Content-Type' => 'application/json'
+            ])->post($urlAttendance, $payload);
+
+            // Retornamos directamente la respuesta mapeada del servidor Artemis
+            return response()->json($attendanceResponse->json(), $attendanceResponse->status());
+        } catch (\Exception $e) {
+            Log::error("Error en HikAttendanceController: " . $e->getMessage());
+            return response()->json([
+                'error' => 'Hubo un fallo en la comunicación con el servidor de asistencia.',
+                'details' => $e->getMessage()
+            ], 500);
+        }
+    }
+    public function getAllAsistence()
+    {
+        try {
+            $url = env('HIKCENTRAL_DEVICE_EVENTS');
+            $partnerKey = env('HIKCENTRAL_PARTNER_KEY');
+
+            $body = [
+                'pageNo' => 1,
+                'pageSize' => 100,
+            ];
+
+            $response = Http::withoutVerifying()->withHeaders([
+                'x-ca-key' => $partnerKey,
+                'x-ca-signature' => $this->generateSignature($url),
+                'x-ca-signature-headers' => 'x-ca-key',
+                'Accept' => '*/*',
+                'Content-Type' => 'application/json'
+            ])->post($url, $body);
+
+            return $response->json();
+        } catch (\Exception $e) {
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
     }
 }

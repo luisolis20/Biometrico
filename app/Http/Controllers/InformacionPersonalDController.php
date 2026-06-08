@@ -206,6 +206,59 @@ class InformacionPersonalDController extends Controller
             ], 500);
         }
     }
+    public function getPersonaUTLVTEByCI($ci)
+    {
+        try {
+            // 1. Crear una llave de caché específica para este CI
+            $cacheKey = "docente_individual_{$ci}";
+
+            // 2. Intentar recuperar de caché o buscar en la DB
+            $docente = Cache::remember($cacheKey, now()->addMinutes(2), function () use ($ci) {
+
+                $item = informacionpersonal_D::select(
+                    'CIInfPer',
+                    'NombInfPer',
+                    'ApellInfPer',
+                    'ApellMatInfPer',
+                    'mailInst',
+                    'TipoInfPer'
+                )
+                    ->where('CIInfPer', $ci)
+                    ->first();
+
+                if (!$item) {
+                    return null;
+                }
+
+                // 3. Transformar el modelo a un array plano (limpio para el front)
+                return [
+                    'CIInfPer'         => $item->CIInfPer,
+                    'NombInfPer'       => $item->NombInfPer,
+                    'ApellInfPer'      => $item->ApellInfPer,
+                    'ApellMatInfPer'   => $item->ApellMatInfPer,
+                    'mailInst'         => $item->mailInst,
+                    'TipoInfPer'       => $item->TipoInfPer,
+                    'hasPhoto'         => true,
+                    'estaRegistradoHC' => null // Cruce con el estado de HikCentral
+                ];
+            });
+
+            // 4. Validar si se encontró el docente
+            if (!$docente) {
+                return response()->json([
+                    'error' => true,
+                    'message' => "No se encontró el docente con CI: {$ci}"
+                ], 404);
+            }
+
+            return response()->json($docente, 200);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'error' => true,
+                'message' => 'Error al obtener docente: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
 
 
 
