@@ -9,6 +9,7 @@ use App\Http\Controllers\UserController;
 use App\Http\Controllers\CarreraController;
 use App\Http\Controllers\HikcentralController;
 use App\Http\Controllers\PeriodoLectivoController;
+use App\Http\Controllers\Asistencia_empleadoController;
 
 
 
@@ -45,6 +46,8 @@ Route::prefix('biometrico')->group(function () {
     Route::get('real-time-events', [HikcentralController::class, 'getRealTimeEvents'])->middleware('throttle:10000,1');
     Route::get('asistencia', [HikcentralController::class, 'getAllAsistence'])->middleware('throttle:10000,1');
     Route::post('attendance-report', [HikcentralController::class, 'getAttendanceReport'])->middleware('throttle:10000,1');
+    Route::post('attendance-sync', [Asistencia_empleadoController::class, 'syncAttendance'])->middleware('throttle:10000,1');
+    Route::post('check-local-attendance', [Asistencia_empleadoController::class, 'checkLocal'])->middleware('throttle:10000,1');
     
 
 

@@ -118,8 +118,6 @@ class InformacionPersonalController extends Controller
             // 3. Intentar obtener de caché o ejecutar la consulta (10 minutos de vida)
             $responseData = Cache::remember($cacheKey, now()->addMinutes(10), function () use ($perPage, $searchQuery, $carreraFilter) {
 
-                $carrerasAExcluir = ['056', '122', '124', '197', '206', '601', '602', '603'];
-
                 $query = informacionpersonal::select(
                     'informacionpersonal.CIInfPer',
                     'informacionpersonal.NombInfPer',
@@ -127,27 +125,28 @@ class InformacionPersonalController extends Controller
                     'informacionpersonal.ApellMatInfPer',
                     'informacionpersonal.mailInst',
                     'carrera.NombCarr',
-                    'carrera.idCarr'
+                    'carrera.idCarr',
+                    'detalle_matricula.nivel' // 👈 Nuevo campo solicitado
                 )
                     ->join('factura', 'factura.cedula', '=', 'informacionpersonal.CIInfPer')
-                    ->join('ingreso', 'ingreso.CIInfPer', '=', 'informacionpersonal.CIInfPer')
-                    ->join('carrera', 'carrera.idCarr', '=', 'ingreso.idcarr')
-                    ->where('factura.idper', 126)
-                    ->where('carrera.StatusCarr', 1)
-                    ->whereIn('ingreso.idper', function ($sub) use ($carrerasAExcluir) {
-                        $sub->from('ingreso as i2')
-                            ->selectRaw('MAX(i2.idper)')
-                            ->join('carrera as c2', 'c2.idCarr', '=', 'i2.idcarr')
-                            ->whereColumn('i2.CIInfPer', 'ingreso.CIInfPer')
-                            ->whereNotIn('c2.idCarr', $carrerasAExcluir)
-                            ->where('c2.NombCarr', 'NOT LIKE', '%TRABAJO DE INTEGRACIÓN CURRICULAR%')
-                            ->groupBy('i2.CIInfPer');
+                    ->join('detalle_matricula', 'factura.id', '=', 'detalle_matricula.idfactura') // 👈 Cambio de relación
+                    ->join('carrera', 'carrera.idCarr', '=', 'detalle_matricula.idcarr') // 👈 Cambio de relación
+
+                    // Subconsulta dinámica para traer el periodo activo automáticamente
+                    ->where('factura.idper', function ($sub) {
+                        $sub->from('periodolectivo')
+                            ->select('idper')
+                            ->where('StatusPerLec', 1)
+                            ->limit(1);
                     })
-                    ->whereNotIn('carrera.idCarr', $carrerasAExcluir)
-                    ->where('carrera.NombCarr', 'NOT LIKE', '%TRABAJO DE INTEGRACIÓN CURRICULAR%')
+                    ->where('carrera.StatusCarr', 1)
+                    ->whereIn('factura.tipo_documento', ['MATRICULA', 'MATRÍCULA']) // 👈 Validación de tipo de documento
+                    ->where('carrera.optativa', 0) // 👈 Filtrar materias optativas
+                    ->where('carrera.NombCarr', 'NOT LIKE', '%TRABAJO DE INTEGRACIÓN CURRICULAR%') // 👈 Filtrar carreras no permitidas
+                    ->whereNotIn('detalle_matricula.nivel', [0])
                     ->whereNotNull('informacionpersonal.fotografia');
 
-                // Filtrado por búsqueda (Cédula o Nombres)
+                // Filtrado dinámico por búsqueda (Cédula o Nombres)
                 if (!empty($searchQuery)) {
                     $query->where(function ($q) use ($searchQuery) {
                         $q->where('informacionpersonal.CIInfPer', 'LIKE', "%{$searchQuery}%")
@@ -157,11 +156,12 @@ class InformacionPersonalController extends Controller
                     });
                 }
 
-                // Filtrado por Carrera
+                // Filtrado dinámico por Carrera
                 if (!empty($carreraFilter) && $carreraFilter !== 'Todos') {
                     $query->where('carrera.idCarr', $carreraFilter);
                 }
 
+                // Agrupamiento completo (Previene problemas con la restricción ONLY_FULL_GROUP_BY de MySQL)
                 $query->groupBy(
                     'informacionpersonal.CIInfPer',
                     'informacionpersonal.NombInfPer',
@@ -169,7 +169,8 @@ class InformacionPersonalController extends Controller
                     'informacionpersonal.ApellMatInfPer',
                     'informacionpersonal.mailInst',
                     'carrera.NombCarr',
-                    'carrera.idCarr'
+                    'carrera.idCarr',
+                    'detalle_matricula.nivel'
                 );
 
                 $data = $query->paginate($perPage);
@@ -180,8 +181,6 @@ class InformacionPersonalController extends Controller
 
                 // Transformar la colección para el frontend
                 $items = $data->getCollection()->map(function ($item) {
-                    // Verificamos si ya existe el estado de HikCentral en la caché individual
-                    // Esto es opcional, pero ayuda a que si ya se verificó, el valor persista
                     $ci = $item->CIInfPer;
                     $statusHC = Cache::get("hik_status_est_{$ci}");
 
@@ -192,8 +191,9 @@ class InformacionPersonalController extends Controller
                         'ApellMatInfPer'   => $item->ApellMatInfPer,
                         'mailInst'         => $item->mailInst,
                         'NombCarr'         => $item->NombCarr,
+                        'nivel'            => $item->nivel, // 👈 Enviado al Front
                         'hasPhoto'         => true,
-                        'estaRegistradoHC' => $statusHC // null, true o false
+                        'estaRegistradoHC' => $statusHC
                     ];
                 });
 
@@ -227,34 +227,40 @@ class InformacionPersonalController extends Controller
             // 1. Crear una llave de caché específica para este CI
             $cacheKey = "estudiante_individual_{$ci}";
             $idperidod = $request->input('idper');
+            if (!$idperidod) {
+                return response()->json([
+                    'error' => true,
+                    'message' => 'El parámetro del periodo lectivo (idper) es obligatorio.'
+                ], 400);
+            }
             // 2. Intentar recuperar de caché o buscar en la DB
             $estudiante = Cache::remember($cacheKey, now()->addMinutes(1), function () use ($ci, $idperidod) {
-                $carrerasAExcluir = ['056', '122', '124', '197', '206', '601', '602', '603'];
 
                 $item = informacionpersonal::select(
-                    'informacionpersonal.*',
-                    'carrera.idCarr',
-                    'carrera.codihicenter',
+                    'informacionpersonal.CIInfPer',
+                    'informacionpersonal.NombInfPer',
+                    'informacionpersonal.ApellInfPer',
+                    'informacionpersonal.ApellMatInfPer',
+                    'informacionpersonal.mailInst',
+                    'informacionpersonal.GeneroPer',
                     'carrera.NombCarr',
-                    'carrera.StatusCarr'
+                    'carrera.idCarr',
+                    'facultad.siglas as siglasFacultad',
+                    'detalle_matricula.nivel'
                 )
+                    ->distinct()
                     ->join('factura', 'factura.cedula', '=', 'informacionpersonal.CIInfPer')
-                    ->join('ingreso', 'ingreso.CIInfPer', '=', 'informacionpersonal.CIInfPer')
-                    ->join('carrera', 'carrera.idCarr', '=', 'ingreso.idcarr')
-                    ->where('informacionpersonal.CIInfPer', $ci) // Filtro por el CI solicitado
-                    ->where('factura.idper', $idperidod) // Solo periodo vigente
-                    ->where('carrera.StatusCarr', 1)
-                    ->whereIn('ingreso.idper', function ($sub) use ($carrerasAExcluir) {
-                        $sub->from('ingreso as i2')
-                            ->selectRaw('MAX(i2.idper)')
-                            ->join('carrera as c2', 'c2.idCarr', '=', 'i2.idcarr')
-                            ->whereColumn('i2.CIInfPer', 'ingreso.CIInfPer')
-                            ->whereNotIn('c2.idCarr', $carrerasAExcluir)
-                            ->where('c2.NombCarr', 'NOT LIKE', '%TRABAJO DE INTEGRACIÓN CURRICULAR%')
-                            ->groupBy('i2.CIInfPer');
-                    })
-                    ->whereNotIn('carrera.idCarr', $carrerasAExcluir)
+                    ->join('detalle_matricula', 'factura.id', '=', 'detalle_matricula.idfactura')
+                    ->join('carrera', 'carrera.idCarr', '=', 'detalle_matricula.idcarr')
+                    ->join('facultad', 'facultad.idfacultad', '=', 'carrera.idfacultad')
                     ->where('carrera.NombCarr', 'NOT LIKE', '%TRABAJO DE INTEGRACIÓN CURRICULAR%')
+                    // Parámetros y condiciones del WHERE
+                    ->where('factura.idper', $idperidod)
+                    ->where('carrera.StatusCarr', 1)
+                    ->whereIn('factura.tipo_documento', ['MATRICULA', 'MATRÍCULA'])
+                    ->where('carrera.optativa', 0)
+                    ->where('informacionpersonal.CIInfPer', $ci)
+                    ->whereNotNull('informacionpersonal.fotografia')
                     ->first();
 
                 if (!$item) {
@@ -269,6 +275,8 @@ class InformacionPersonalController extends Controller
                     'ApellMatInfPer'   => $item->ApellMatInfPer,
                     'mailInst'         => $item->mailInst,
                     'NombCarr'       => $item->NombCarr,
+                    'siglasFacultad'   => $item->siglasFacultad,
+                    'nivel'            => $item->nivel,
                     'hasPhoto'         => true,
                     'estaRegistradoHC' => null // Cruce con el estado de HikCentral
                 ];
@@ -278,7 +286,7 @@ class InformacionPersonalController extends Controller
             if (!$estudiante) {
                 return response()->json([
                     'error' => true,
-                    'message' => "No se encontró el docente con CI: {$ci}"
+                    'message' => "No se encontró el estudiante con CI: {$ci}"
                 ], 404);
             }
 
@@ -454,7 +462,7 @@ class InformacionPersonalController extends Controller
                     ->where('ingreso_inscripcionsnnas.idper', 126)
                     ->whereNotNull('informacionpersonal.fotografia')
                     ->whereNotNull('ingreso_inscripcionsnnas.laboratorio_examen')
-                    ->where('informacionpersonal.CIInfPer', $ci) 
+                    ->where('informacionpersonal.CIInfPer', $ci)
                     ->first();
 
                 if (!$item) {

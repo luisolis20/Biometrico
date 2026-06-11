@@ -79,6 +79,10 @@ class informacionpersonal_D extends Model
         'area',
         'cargo',
     ];
+    public function asistencia_empleado()
+    {
+        return $this->hasMany(Asistencia_empleado::class, 'ci_empleado', 'CIInfPer');
+    }
     
    
 
