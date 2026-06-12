@@ -152,6 +152,77 @@ class InformacionPersonalDController extends Controller
             ], 500);
         }
     }
+    public function getPersonalUTLVTE(Request $request)
+    {
+        try {
+            $page = $request->input('page', 1);
+            $perPage = min($request->input('per_page', 20), 50);
+            $searchQuery = $request->input('search_query', '');
+            $tipoFilter = $request->input('tipoFilter', 'Todos');
+            $cacheKey = "docentes_page_{$page}_limit_{$perPage}_search_" . md5($searchQuery) . "_tipo_{$tipoFilter}";
+            $responseData = Cache::remember($cacheKey, now()->addMinutes(10), function () use ($perPage, $searchQuery, $tipoFilter) {
+
+                $query = informacionpersonal_D::select('CIInfPer', 'NombInfPer', 'ApellInfPer', 'ApellMatInfPer', 'mailInst', 'TipoInfPer')
+                    ->whereIn('TipoInfPer', ['A', 'T'])
+                    ->whereNotNull('fotografia');
+
+                // Filtrado por búsqueda
+                if (!empty($searchQuery)) {
+                    $query->where(function ($q) use ($searchQuery) {
+                        $q->where('CIInfPer', 'LIKE', "%{$searchQuery}%")
+                            ->orWhere('NombInfPer', 'LIKE', "%{$searchQuery}%")
+                            ->orWhere('ApellInfPer', 'LIKE', "%{$searchQuery}%")
+                            ->orWhere('ApellMatInfPer', 'LIKE', "%{$searchQuery}%");
+                    });
+                }
+
+                // Filtrado por tipo
+                if (!empty($tipoFilter) && $tipoFilter !== 'Todos') {
+                    $query->where('TipoInfPer', $tipoFilter);
+                }
+
+                $data = $query->paginate($perPage);
+
+                if ($data->isEmpty()) {
+                    return ['data' => [], 'pagination' => null];
+                }
+
+                // Transformar la colección
+                $items = $data->getCollection()->map(function ($item) {
+                    return [
+                        'CIInfPer'        => $item->CIInfPer,
+                        'NombInfPer'      => $item->NombInfPer,
+                        'ApellInfPer'     => $item->ApellInfPer,
+                        'ApellMatInfPer'  => $item->ApellMatInfPer,
+                        'mailInst'         => $item->mailInst,
+                        'TipoInfPer'      => $item->TipoInfPer,
+                        'hasPhoto'        => true,
+                        'estaRegistradoHC' => null // Estado inicial para el front
+                    ];
+                });
+
+                return [
+                    'data' => $items,
+                    'pagination' => [
+                        'current_page' => $data->currentPage(),
+                        'per_page'     => $data->perPage(),
+                        'total'        => $data->total(),
+                        'last_page'    => $data->lastPage(),
+                    ]
+                ];
+            });
+            if (empty($responseData['data'])) {
+                return response()->json(['data' => [], 'message' => 'No se encontraron registros'], 200);
+            }
+
+            return response()->json($responseData, 200);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'error' => true,
+                'message' => 'Error interno: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
     public function getDocenteByCI($ci)
     {
         try {

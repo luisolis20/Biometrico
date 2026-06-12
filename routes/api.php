@@ -75,6 +75,7 @@ Route::prefix('biometrico')->group(function () {
         Route::post('refresh', [AuthController::class, 'refresh']);
         Route::get('logout', [AuthController::class, 'logout'])->name('logout');
         Route::get('getdocentes', [InformacionPersonalDController::class, 'getdocentes'])->middleware('throttle:10000,1');
+        Route::get('getpersonal-utlvte', [InformacionPersonalDController::class, 'getPersonalUTLVTE'])->middleware('throttle:10000,1');
         Route::get('estudiantesfoto', [InformacionPersonalController::class, 'estudiantesfoto'])->middleware('throttle:10000,1');
         Route::get('estudiantesfoto-pre-est', [InformacionPersonalController::class, 'getEstudiantesPre'])->middleware('throttle:10000,1');
         Route::get('estudiantes-foto-lista', [InformacionPersonalController::class, 'listarEstudiantesConFoto']);

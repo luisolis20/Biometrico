@@ -42,12 +42,18 @@ class Asistencia_empleadoController extends Controller
         $beginTime = $request->beginTime;
         $endTime = $request->endTime;
 
-        $exists = Asistencia_empleado::where('ci_empleado', $ci_empleado)
+        $data = Asistencia_empleado::where('ci_empleado', $ci_empleado)
             ->whereBetween('fecha', [$beginTime, $endTime])
-            ->exists();
+            ->get();
 
-        return response()->json(['exists' => $exists]);
+        $exists = $data->isNotEmpty();
+
+        return response()->json([
+            'exists' => $exists,
+            'data'   => $data // Enviamos la data al frontend
+        ]);
     }
+    
     public function syncAttendance(Request $request)
     {
         $ci_empleado = $request->ci_empleado;
