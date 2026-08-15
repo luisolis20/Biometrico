@@ -126,6 +126,7 @@ class InformacionPersonalController extends Controller
                     'informacionpersonal.mailInst',
                     'carrera.NombCarr',
                     'carrera.idCarr',
+                    'carrera.codihicenter',
                     'detalle_matricula.nivel' // 👈 Nuevo campo solicitado
                 )
                     ->join('factura', 'factura.cedula', '=', 'informacionpersonal.CIInfPer')
@@ -144,6 +145,7 @@ class InformacionPersonalController extends Controller
                     ->where('carrera.optativa', 0) // 👈 Filtrar materias optativas
                     ->where('carrera.NombCarr', 'NOT LIKE', '%TRABAJO DE INTEGRACIÓN CURRICULAR%') // 👈 Filtrar carreras no permitidas
                     ->whereNotIn('detalle_matricula.nivel', [0])
+                    ->whereNotNull('carrera.codihicenter') // 👈 Filtrar carreras sin código de HikCentral
                     ->whereNotNull('informacionpersonal.fotografia');
 
                 // Filtrado dinámico por búsqueda (Cédula o Nombres)
@@ -170,6 +172,7 @@ class InformacionPersonalController extends Controller
                     'informacionpersonal.mailInst',
                     'carrera.NombCarr',
                     'carrera.idCarr',
+                    'carrera.codihicenter',
                     'detalle_matricula.nivel'
                 );
 

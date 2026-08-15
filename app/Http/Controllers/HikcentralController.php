@@ -548,7 +548,6 @@ class HikcentralController extends Controller
     {
         try {
             $carreraFilter = $request->input('carrera_name');
-            $carrerasAExcluir = ['056', '122', '124', '197', '206', '601', '602', '603'];
 
             $query = informacionpersonal::select(
                 'informacionpersonal.CIInfPer',
@@ -556,27 +555,34 @@ class HikcentralController extends Controller
                 'informacionpersonal.ApellInfPer',
                 'informacionpersonal.ApellMatInfPer',
                 'informacionpersonal.mailInst',
+                'informacionpersonal.GeneroPer',
                 'carrera.NombCarr',
-                'carrera.idCarr'
+                'carrera.idCarr',
+                'carrera.codihicenter',
+                'facultad.siglas',
+                'detalle_matricula.nivel'
             )
-                ->join('factura', 'factura.cedula', '=', 'informacionpersonal.CIInfPer')
-                ->join('ingreso', 'ingreso.CIInfPer', '=', 'informacionpersonal.CIInfPer')
-                ->join('carrera', 'carrera.idCarr', '=', 'ingreso.idcarr')
-                ->where('factura.idper', 126) // Periodo vigente
-                ->where('carrera.StatusCarr', 1)
-                ->whereNotNull('informacionpersonal.fotografia')
-                // --- MISMA LÓGICA DE FILTRADO DE CARRERA ÚLTIMA ---
-                ->whereIn('ingreso.idper', function ($sub) use ($carrerasAExcluir) {
-                    $sub->from('ingreso as i2')
-                        ->selectRaw('MAX(i2.idper)')
-                        ->join('carrera as c2', 'c2.idCarr', '=', 'i2.idcarr')
-                        ->whereColumn('i2.CIInfPer', 'ingreso.CIInfPer')
-                        ->whereNotIn('c2.idCarr', $carrerasAExcluir)
-                        ->where('c2.NombCarr', 'NOT LIKE', '%TRABAJO DE INTEGRACIÓN CURRICULAR%')
-                        ->groupBy('i2.CIInfPer');
-                })
-                ->whereNotIn('carrera.idCarr', $carrerasAExcluir)
-                ->where('carrera.NombCarr', 'NOT LIKE', '%TRABAJO DE INTEGRACIÓN CURRICULAR%');
+            ->distinct() // Equivalente a SELECT DISTINCT
+            ->join('factura', 'factura.cedula', '=', 'informacionpersonal.CIInfPer')
+            ->join('detalle_matricula', 'factura.id', '=', 'detalle_matricula.idfactura')
+            ->join('carrera', 'carrera.idCarr', '=', 'detalle_matricula.idcarr')
+            ->join('facultad', 'facultad.idfacultad', '=', 'carrera.idfacultad')
+            
+            // Subconsulta para obtener el periodo lectivo activo
+            ->where('factura.idper', function ($sub) {
+                $sub->select('idper')
+                    ->from('periodolectivo')
+                    ->where('StatusPerLec', 1)
+                    ->limit(1);
+            })
+            
+            // Nuevas condiciones solicitadas
+            ->where('carrera.StatusCarr', 1)
+            ->whereIn('factura.tipo_documento', ['MATRICULA', 'MATRÍCULA'])
+            ->where('carrera.optativa', 0)
+            ->where('detalle_matricula.nivel', '!=', '0')
+            ->whereNotNull('carrera.codihicenter')
+            ->whereNotNull('informacionpersonal.fotografia');
 
             // Aplicar el mismo filtro de carrera que la tabla
             if (!empty($carreraFilter) && $carreraFilter !== 'Todos') {
@@ -590,8 +596,12 @@ class HikcentralController extends Controller
                 'informacionpersonal.ApellInfPer',
                 'informacionpersonal.ApellMatInfPer',
                 'informacionpersonal.mailInst',
+                'informacionpersonal.GeneroPer',
                 'carrera.NombCarr',
-                'carrera.idCarr'
+                'carrera.idCarr',
+                'carrera.codihicenter',
+                'facultad.siglas',
+                'detalle_matricula.nivel'
             )->get();
 
             $pendientes = [];
@@ -689,26 +699,32 @@ class HikcentralController extends Controller
                 'carrera.idCarr',
                 'carrera.codihicenter',
                 'carrera.NombCarr',
-                'carrera.StatusCarr'
+                'carrera.StatusCarr',
+                'detalle_matricula.nivel'
             )
-                ->join('factura', 'factura.cedula', '=', 'informacionpersonal.CIInfPer')
-                ->join('ingreso', 'ingreso.CIInfPer', '=', 'informacionpersonal.CIInfPer')
-                ->join('carrera', 'carrera.idCarr', '=', 'ingreso.idcarr')
-                ->where('informacionpersonal.CIInfPer', $ci) // Filtro por el CI solicitado
-                ->where('factura.idper', 126) // Solo periodo vigente
-                ->where('carrera.StatusCarr', 1)
-                ->whereIn('ingreso.idper', function ($sub) use ($carrerasAExcluir) {
-                    $sub->from('ingreso as i2')
-                        ->selectRaw('MAX(i2.idper)')
-                        ->join('carrera as c2', 'c2.idCarr', '=', 'i2.idcarr')
-                        ->whereColumn('i2.CIInfPer', 'ingreso.CIInfPer')
-                        ->whereNotIn('c2.idCarr', $carrerasAExcluir)
-                        ->where('c2.NombCarr', 'NOT LIKE', '%TRABAJO DE INTEGRACIÓN CURRICULAR%')
-                        ->groupBy('i2.CIInfPer');
-                })
-                ->whereNotIn('carrera.idCarr', $carrerasAExcluir)
-                ->where('carrera.NombCarr', 'NOT LIKE', '%TRABAJO DE INTEGRACIÓN CURRICULAR%')
-                ->first();
+            ->distinct()
+            ->join('factura', 'factura.cedula', '=', 'informacionpersonal.CIInfPer')
+            ->join('detalle_matricula', 'factura.id', '=', 'detalle_matricula.idfactura')
+            ->join('carrera', 'carrera.idCarr', '=', 'detalle_matricula.idcarr')
+            ->join('facultad', 'facultad.idfacultad', '=', 'carrera.idfacultad')
+            ->where('informacionpersonal.CIInfPer', $ci) // Filtro específico por el CI solicitado
+            
+            // Subconsulta para el periodo lectivo activo
+            ->where('factura.idper', function ($sub) {
+                $sub->select('idper')
+                    ->from('periodolectivo')
+                    ->where('StatusPerLec', 1)
+                    ->limit(1);
+            })
+            
+            // Nuevas condiciones requeridas
+            ->where('carrera.StatusCarr', 1)
+            ->whereIn('factura.tipo_documento', ['MATRICULA', 'MATRÍCULA'])
+            ->where('carrera.optativa', 0)
+            ->where('detalle_matricula.nivel', '!=', '0')
+            ->whereNotNull('carrera.codihicenter')
+            ->whereNotNull('informacionpersonal.fotografia')
+            ->first();
 
             if (!$estudiante || empty($estudiante->fotografia)) {
                 return response()->json(['error' => 'Estudiante o foto no encontrada'], 404);
