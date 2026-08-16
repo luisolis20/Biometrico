@@ -12,7 +12,10 @@ class Kernel extends ConsoleKernel
      */
     protected function schedule(Schedule $schedule): void
     {
-        // $schedule->command('inspire')->hourly();
+       $schedule->command('asistencia:sync-hikcentral')
+             ->everyTenMinutes()
+             ->between('07:00', '20:00')
+             ->appendOutputTo(storage_path('logs/sincronizacion_hikcentral.log'));
     }
 
     /**

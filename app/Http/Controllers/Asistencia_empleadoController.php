@@ -91,8 +91,8 @@ class Asistencia_empleadoController extends Controller
                     'hora_almuerzo_salida'  => $hcHoraAlmuerzoSalida,
                     'hora_almuerzo_entrada' => $hcHoraAlmuerzoEntrada,
                     'hora_salida'           => $hcHoraSalida,
-                    'ip_marcacion'          => request()->ip(),
-                    'campus'                => '',
+                    'ip_marcacion'          => '190.15.134.93',
+                    'campus'                => 'Campus Universitario',
                     'estado_asistencia'     => $hcEstadoAsistencia,
                 ]);
             }
