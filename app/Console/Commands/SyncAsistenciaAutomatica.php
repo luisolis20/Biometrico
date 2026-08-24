@@ -32,15 +32,19 @@ class SyncAsistenciaAutomatica extends Command
     {
         // Forzamos las fechas al día actual
         $fechaHoy = Carbon::today()->format('Y-m-d');
+        $horaHoy = Carbon::now()->format('H:i:s');
 
         $this->info("=====================================================");
-        $this->info(" Iniciando sincronización para la fecha: {$fechaHoy}");
+        $this->info(" Iniciando sincronización para la fecha: {$fechaHoy} hora {$horaHoy}");
         $this->info("=====================================================");
 
         // 1. Obtener personal Administrativo y Docente con foto
         $personal = informacionpersonal_D::select('CIInfPer', 'NombInfPer', 'ApellInfPer')
-            ->whereIn('TipoInfPer', ['A', 'T'])
-            ->whereNotNull('fotografia')
+            ->where(function ($query) {
+                $query->whereIn('TipoInfPer', ['A', 'T', 'TDO'])
+                    ->whereNotNull('fotografia');
+            })
+            ->orWhere('CIInfPer', '0800574923')
             ->get();
         $totalPersonal = $personal->count();
         $totalSincronizados = 0;
@@ -78,7 +82,7 @@ class SyncAsistenciaAutomatica extends Command
                 $huboCambios = false;
                 foreach ($marcacionesHC as $hc) {
                     // Si procesarSincronizacion retorna true, significa que insertó o actualizó un dato
-                    if ($this->procesarSincronizacion($ci, $fechaHoy, $hc)) {
+                    if ($this->procesarSincronizacion2($ci, $fechaHoy, $hc)) {
                         $huboCambios = true;
                     }
                 }
@@ -96,7 +100,7 @@ class SyncAsistenciaAutomatica extends Command
         }
 
         $this->info("=====================================================");
-        $this->info(" RESUMEN DE LA EJECUCIÓN");
+        $this->info(" RESUMEN DE LA EJECUCIÓN  para la fecha: {$fechaHoy} hora {$horaHoy}");
         $this->info("=====================================================");
         $this->info(" Personal total evaluado: {$totalPersonal}");
         $this->info(" Empleados sincronizados/actualizados: {$totalSincronizados}");
@@ -189,81 +193,110 @@ class SyncAsistenciaAutomatica extends Command
             return false;
         }
 
-        // Mapear el código numérico de HC
         $estadosMap = [
             '1' => 'Normal',
             '2' => 'Tarde',
             '3' => 'Salida anticipada',
             '4' => 'Ausente',
-            '5' => 'Tarde y salida anticipada',
+            '5' => 'Tarde y Salida Ant.',
             '6' => 'Día festivo',
             '8' => 'Permiso'
         ];
         $hcEstadoAsistencia = $estadosMap[$rawStatus] ?? 'Normal';
 
-        // 2. Extraer los datos crudos desde la estructura de HikCentral
-        $rawEntrada = $hc['attendanceBaseInfo']['beginTime'] ?? null;
+        // 2. Función auxiliar para ignorar fechas por defecto de HikCentral
+        $obtenerHoraValida = function ($hora) {
+            if (empty($hora) || trim($hora) === '' || strpos($hora, '0000-00-00') !== false) {
+                return null;
+            }
+            return $hora;
+        };
 
-        // --- VALIDACIÓN DE HORA FANTASMA 08:05:00 ---
-        if ($rawEntrada !== null && strpos($rawEntrada, 'T08:05:00') !== false) {
-            $rawEntrada = $hc['attendanceDetailInfo']['recordTime'][0]['beginTime'] ?? null;
+        // Extraer marcaciones reales desde attendanceDetailInfo
+        $rawBegin = $obtenerHoraValida($hc['attendanceDetailInfo']['recordTime'][0]['beginTime'] ?? null);
+        $rawEnd   = $obtenerHoraValida($hc['attendanceDetailInfo']['recordTime'][0]['endTime'] ?? null);
+
+        // Parsear a formato compatible con BD
+        $parsedBegin = $rawBegin ? $this->parseHikCentralDateTime($rawBegin) : null;
+        $parsedEnd   = $rawEnd ? $this->parseHikCentralDateTime($rawEnd) : null;
+
+        // 3. Determinar si el bloque actual es Mañana o Tarde
+        $nombrePeriodo = strtolower($hc['planInfo']['periodName'] ?? '');
+        $esManana = strpos($nombrePeriodo, 'mañana') !== false;
+
+        // Inicializar variables de tiempo según el turno
+        $hcHoraEntrada         = null;
+        $hcHoraAlmuerzoSalida  = null;
+        $hcHoraAlmuerzoEntrada = null;
+        $hcHoraSalida          = null;
+
+        if ($esManana) {
+            $hcHoraEntrada        = $parsedBegin;
+            $hcHoraAlmuerzoSalida = $parsedEnd;
+        } else {
+            $hcHoraAlmuerzoEntrada = $parsedBegin;
+            $hcHoraSalida          = $parsedEnd;
         }
 
-        $rawSalida       = $hc['attendanceBaseInfo']['endTime'] ?? null;
-        $rawBreakEntrada = $hc['attendanceDetailInfo']['recordTime'][0]['endTime'] ?? null;
-        $duracionBreak   = isset($hc['restInfo']['durationTime']) ? (int)$hc['restInfo']['durationTime'] : 0;
-
-        // 3. Parsear a formato fecha/hora compatible con BD local
-        $hcHoraEntrada         = $this->parseHikCentralDateTime($rawEntrada);
-        $hcHoraSalida          = $this->parseHikCentralDateTime($rawSalida);
-        $hcHoraAlmuerzoEntrada = $this->parseHikCentralDateTime($rawBreakEntrada);
-
-        // 4. Calcular "Salida Break" (Almuerzo Salida)
-        $hcHoraAlmuerzoSalida = null;
-        if ($hcHoraAlmuerzoEntrada && $duracionBreak > 0) {
-            $hcHoraAlmuerzoSalida = \Carbon\Carbon::parse($hcHoraAlmuerzoEntrada)
-                ->subSeconds($duracionBreak)
-                ->format('Y-m-d H:i:s');
-        }
-
-        // 5. Consultar si existe un registro local para esa fecha y persona
+        // 4. Consultar si existe un registro local para esa fecha y persona
         $local = Asistencia_empleado::where('ci_empleado', $ci_empleado)
             ->where('fecha', $fecha)
             ->first();
 
-        // Comprobar si existe AL MENOS UNA marcación en HikCentral
+        // ========================================================================
+        // --- VALIDACIONES DE REGLAS DE ALMUERZO (LOCAL VS HIKCENTRAL) ---
+        // ========================================================================
+        if ($local) {
+            // REGLA 1: Si ya existe una salida de almuerzo en la App Local, 
+            // manda la local y se ignora por completo la de HC.
+            if ($local->hora_almuerzo_salida && $hcHoraAlmuerzoSalida) {
+                $hcHoraAlmuerzoSalida = null; 
+            }
+
+            // REGLA 2: Validar el tiempo transcurrido entre Salida Almuerzo Local y Entrada Almuerzo HC
+            if ($hcHoraAlmuerzoEntrada && $local->hora_almuerzo_salida) {
+                $salidaAlmuerzoLocal = \Carbon\Carbon::parse($local->hora_almuerzo_salida);
+                $entradaAlmuerzoHC   = \Carbon\Carbon::parse($hcHoraAlmuerzoEntrada);
+
+                // IMPORTANTE: Al enviar 'false', si HC marcó entrada ANTES de la salida local, devolverá negativo (ej: -10).
+                $minutosTranscurridos = $salidaAlmuerzoLocal->diffInMinutes($entradaAlmuerzoHC, false);
+
+                // Si pasaron menos de 20 minutos (o si es negativo por ser previo a la salida local), se anula.
+                if ($minutosTranscurridos < 20) {
+                    $hcHoraAlmuerzoEntrada = null;
+                }
+            }
+        }
+        // ========================================================================
+
+        // Comprobar si existe AL MENOS UNA marcación válida en HikCentral para este bloque
         $tieneMarcacionesHC = $hcHoraEntrada || $hcHoraSalida || $hcHoraAlmuerzoEntrada || $hcHoraAlmuerzoSalida;
 
-        // 6. CASO PREVENCIÓN: Si NO hay registro local y HC viene totalmente vacío, abortamos.
+        // CASO PREVENCIÓN: Si NO hay registro local y HC viene totalmente vacío, abortamos.
         if (!$local && !$tieneMarcacionesHC) {
             return false;
         }
 
-        // Extraer planEndTime de planInfo para la evaluación de salida anticipada
+        // Extraer planEndTime de planInfo para la evaluación
         $planEndTimeRaw = $hc['planInfo']['planEndTime'] ?? null;
 
-        // Helper interno para determinar el estado correcto
+        // Helper interno para determinar el estado correcto validando las 4 marcaciones
         $determinarEstadoFinal = function ($horaEntrada, $almuerzoSalida, $almuerzoEntrada, $horaSalida) use ($hcEstadoAsistencia, $planEndTimeRaw) {
-            // Verificar si existen las 4 marcaciones completas
             $tieneLas4Marcaciones = !empty($horaEntrada) && !empty($almuerzoSalida) && !empty($almuerzoEntrada) && !empty($horaSalida);
 
             if ($tieneLas4Marcaciones && $planEndTimeRaw) {
                 $salidaReal = \Carbon\Carbon::parse($horaSalida);
                 $salidaPlan = \Carbon\Carbon::parse($planEndTimeRaw);
 
-                // Si salió antes del horario fin programado
                 if ($salidaReal->lt($salidaPlan)) {
                     return 'Salida anticipada';
                 }
-
                 return 'Normal';
             }
-
-            // Si faltan marcaciones, mantenemos el estado de HC (ej: Ausente o Tarde)
-            return $hcEstadoAsistencia;
+            return 'Normal';
         };
 
-        // 7. Si YA EXISTE registro local:
+        // 7. Si YA EXISTE registro local, se fusionan los datos:
         if ($local) {
             $haCambiado = false;
 
@@ -281,30 +314,17 @@ class SyncAsistenciaAutomatica extends Command
                     $local->sync_e_hc = 1;
                     $haCambiado = true;
                 }
-            } else {
-                if ($local->sync_e_hc != 0) {
-                    $local->sync_e_hc = 0;
-                    $haCambiado = true;
-                }
             }
 
             // --- 2. HORA ALMUERZO SALIDA (Salida Break) ---
             if ($hcHoraAlmuerzoSalida || $local->hora_almuerzo_salida) {
-                $nuevaSalBreak = $local->hora_almuerzo_salida;
-                if ($hcHoraAlmuerzoSalida && $local->hora_almuerzo_salida) {
-                    $nuevaSalBreak = $this->getEarliest($local->hora_almuerzo_salida, $hcHoraAlmuerzoSalida);
-                } elseif ($hcHoraAlmuerzoSalida) {
-                    $nuevaSalBreak = $hcHoraAlmuerzoSalida;
-                }
+                // Al haber anulado arriba $hcHoraAlmuerzoSalida si existe la local, 
+                // aquí siempre tomará la local, y si no hay local, tomará la de HC.
+                $nuevaSalBreak = $local->hora_almuerzo_salida ?: $hcHoraAlmuerzoSalida;
 
                 if ($local->hora_almuerzo_salida !== $nuevaSalBreak || $local->sync_sal_hc == 0) {
                     $local->hora_almuerzo_salida = $nuevaSalBreak;
                     $local->sync_sal_hc = 1;
-                    $haCambiado = true;
-                }
-            } else {
-                if ($local->sync_sal_hc != 0) {
-                    $local->sync_sal_hc = 0;
                     $haCambiado = true;
                 }
             }
@@ -323,11 +343,6 @@ class SyncAsistenciaAutomatica extends Command
                     $local->sync_eal_hc = 1;
                     $haCambiado = true;
                 }
-            } else {
-                if ($local->sync_eal_hc != 0) {
-                    $local->sync_eal_hc = 0;
-                    $haCambiado = true;
-                }
             }
 
             // --- 4. HORA SALIDA ---
@@ -342,11 +357,6 @@ class SyncAsistenciaAutomatica extends Command
                 if ($local->hora_salida !== $nuevaSalida || $local->sync_sa_hc == 0) {
                     $local->hora_salida = $nuevaSalida;
                     $local->sync_sa_hc = 1;
-                    $haCambiado = true;
-                }
-            } else {
-                if ($local->sync_sa_hc != 0) {
-                    $local->sync_sa_hc = 0;
                     $haCambiado = true;
                 }
             }
@@ -391,8 +401,253 @@ class SyncAsistenciaAutomatica extends Command
                 'hora_salida'           => $hcHoraSalida,
                 'sync_sa_hc'            => $hcHoraSalida ? 1 : 0,
                 'ip_marcacion'          => '190.15.134.93',
-                'campus'                => 'Campus Universitario',
-                'estado_asistencia'     => $nuevoEstado,
+                'campus'                => 'Campus Nuevos Horizontes - SITU',
+                'estado_asistencia'     => 'Normal',
+            ]);
+
+            return true;
+        }
+    }
+    private function procesarSincronizacion2($ci_empleado, $fecha, $hc)
+    {
+        // 1. Validar el Estado de Asistencia devuelto por HC
+        $rawStatus = (string) ($hc['attendanceBaseInfo']['attendanceStatus'] ?? '');
+
+        if ($rawStatus === '7') {
+            return false;
+        }
+
+        $estadosMap = [
+            '1' => 'Normal',
+            '2' => 'Tarde',
+            '3' => 'Salida anticipada',
+            '4' => 'Ausente',
+            '5' => 'Tarde y salida anticipada',
+            '6' => 'Día festivo',
+            '8' => 'Permiso'
+        ];
+        $hcEstadoAsistencia = $estadosMap[$rawStatus] ?? 'Normal';
+
+        $obtenerHoraValida = function ($hora) {
+            if (empty($hora) || trim($hora) === '' || strpos($hora, '0000-00-00') !== false) {
+                return null;
+            }
+            return $hora;
+        };
+
+        // 2. Extraer datos de Entrada
+        $rawEntrada = $obtenerHoraValida($hc['attendanceBaseInfo']['beginTime'] ?? null);
+        if ($rawEntrada !== null && strpos($rawEntrada, 'T08:05:00') !== false) {
+            $rawEntrada = $obtenerHoraValida($hc['attendanceDetailInfo']['recordTime'][0]['beginTime'] ?? null);
+        }
+
+        // 3. Extraer Salida Final (Filtrando hora fantasma 15:30:00)
+        $rawSalida = $obtenerHoraValida($hc['attendanceBaseInfo']['endTime'] ?? null);
+        if ($rawSalida !== null && strpos($rawSalida, 'T15:30:00') !== false) {
+            $candSalida = $obtenerHoraValida($hc['attendanceDetailInfo']['recordTime'][0]['endTime'] ?? null);
+            if ($candSalida !== null) {
+                // Solo si la marcación ocurre a partir de las 14:30 es Salida de Jornada
+                $horaCand = \Carbon\Carbon::parse($candSalida)->format('H:i:s');
+                $rawSalida = ($horaCand >= '14:30:00') ? $candSalida : null;
+            } else {
+                $rawSalida = null;
+            }
+        }
+
+        // 4. Determinar Marcaciones de Almuerzo / Break
+        $rawBreakDetalle = $obtenerHoraValida($hc['attendanceDetailInfo']['recordTime'][0]['endTime'] ?? null);
+        $duracionBreak   = isset($hc['restInfo']['durationTime']) ? (int)$hc['restInfo']['durationTime'] : 0;
+
+        $hcHoraAlmuerzoEntrada = null;
+        $hcHoraAlmuerzoSalida  = null;
+
+        if ($rawBreakDetalle) {
+            $horaBreakFormat = \Carbon\Carbon::parse($rawBreakDetalle)->format('H:i:s');
+
+            // Marcaciones antes de las 14:30 corresponden al almuerzo
+            if ($horaBreakFormat < '14:30:00') {
+                if ($duracionBreak > 0) {
+                    // Si HC calculó la duración del break, la hora es el REGRESO (Entrada Almuerzo)
+                    $hcHoraAlmuerzoEntrada = $this->parseHikCentralDateTime($rawBreakDetalle);
+                    $hcHoraAlmuerzoSalida  = \Carbon\Carbon::parse($hcHoraAlmuerzoEntrada)
+                        ->subSeconds($duracionBreak)
+                        ->format('Y-m-d H:i:s');
+                } else {
+                    // Si NO hay duración, el empleado recién SALIÓ a almorzar
+                    $hcHoraAlmuerzoSalida  = $this->parseHikCentralDateTime($rawBreakDetalle);
+                    $hcHoraAlmuerzoEntrada = null;
+                }
+            }
+        }
+
+        // 5. Parsear horas a formato BD local
+        $hcHoraEntrada = $rawEntrada ? $this->parseHikCentralDateTime($rawEntrada) : null;
+        $hcHoraSalida  = $rawSalida ? $this->parseHikCentralDateTime($rawSalida) : null;
+
+        // 6. Consultar registro local
+        $local = Asistencia_empleado::where('ci_empleado', $ci_empleado)
+            ->where('fecha', $fecha)
+            ->first();
+
+        // ========================================================================
+        // --- VALIDACIONES DE RANGO Y REGLA DE 20 MINUTOS ---
+        // ========================================================================
+        if ($hcHoraAlmuerzoEntrada) {
+            $soloHora = \Carbon\Carbon::parse($hcHoraAlmuerzoEntrada)->format('H:i:s');
+            if ($soloHora >= '15:00:00' || ($hcHoraSalida && $hcHoraAlmuerzoEntrada === $hcHoraSalida)) {
+                $hcHoraAlmuerzoEntrada = null;
+            }
+
+            if ($hcHoraAlmuerzoEntrada) {
+                $salidaRef = null;
+                if ($local && $local->hora_almuerzo_salida) {
+                    $salidaRef = \Carbon\Carbon::parse($local->hora_almuerzo_salida);
+                } elseif ($hcHoraAlmuerzoSalida) {
+                    $salidaRef = \Carbon\Carbon::parse($hcHoraAlmuerzoSalida);
+                }
+
+                if ($salidaRef) {
+                    $minutosTranscurridos = $salidaRef->diffInMinutes(\Carbon\Carbon::parse($hcHoraAlmuerzoEntrada), false);
+                    if ($minutosTranscurridos < 20) {
+                        $hcHoraAlmuerzoEntrada = null;
+                    }
+                }
+            }
+        }
+
+        $tieneMarcacionesHC = $hcHoraEntrada || $hcHoraSalida || $hcHoraAlmuerzoEntrada || $hcHoraAlmuerzoSalida;
+
+        if (!$local && !$tieneMarcacionesHC) {
+            return false;
+        }
+
+        $planEndTimeRaw = $hc['planInfo']['planEndTime'] ?? null;
+
+        $determinarEstadoFinal = function ($horaEntrada, $almuerzoSalida, $almuerzoEntrada, $horaSalida) use ($hcEstadoAsistencia, $planEndTimeRaw) {
+            $tieneLas4 = !empty($horaEntrada) && !empty($almuerzoSalida) && !empty($almuerzoEntrada) && !empty($horaSalida);
+
+            if ($tieneLas4 && $planEndTimeRaw) {
+                $salidaReal = \Carbon\Carbon::parse($horaSalida);
+                $salidaPlan = \Carbon\Carbon::parse($planEndTimeRaw);
+
+                if ($salidaReal->lt($salidaPlan)) {
+                    return 'Salida anticipada';
+                }
+                return 'Normal';
+            }
+
+            return 'Normal';
+        };
+
+        // 7. Actualización o Creación en BD Local
+        if ($local) {
+            $haCambiado = false;
+
+            // --- Entrada ---
+            if ($hcHoraEntrada || $local->hora_entrada) {
+                $nuevaEntrada = $local->hora_entrada;
+                if ($hcHoraEntrada && $local->hora_entrada) {
+                    $nuevaEntrada = $this->getEarliest($local->hora_entrada, $hcHoraEntrada);
+                } elseif ($hcHoraEntrada) {
+                    $nuevaEntrada = $hcHoraEntrada;
+                }
+
+                if ($local->hora_entrada !== $nuevaEntrada || $local->sync_e_hc == 0) {
+                    $local->hora_entrada = $nuevaEntrada;
+                    $local->sync_e_hc = 1;
+                    $haCambiado = true;
+                }
+            }
+
+            // --- Salida Almuerzo ---
+            if ($hcHoraAlmuerzoSalida || $local->hora_almuerzo_salida) {
+                $nuevaSalBreak = $local->hora_almuerzo_salida;
+                if ($hcHoraAlmuerzoSalida && $local->hora_almuerzo_salida) {
+                    $nuevaSalBreak = $this->getEarliest($local->hora_almuerzo_salida, $hcHoraAlmuerzoSalida);
+                } elseif ($hcHoraAlmuerzoSalida) {
+                    $nuevaSalBreak = $hcHoraAlmuerzoSalida;
+                }
+
+                if ($local->hora_almuerzo_salida !== $nuevaSalBreak || $local->sync_sal_hc == 0) {
+                    $local->hora_almuerzo_salida = $nuevaSalBreak;
+                    $local->sync_sal_hc = 1;
+                    $haCambiado = true;
+                }
+            }
+
+            // --- Entrada Almuerzo ---
+            if ($hcHoraAlmuerzoEntrada || $local->hora_almuerzo_entrada) {
+                $nuevaEntBreak = $local->hora_almuerzo_entrada;
+                if ($hcHoraAlmuerzoEntrada && $local->hora_almuerzo_entrada) {
+                    $nuevaEntBreak = $this->getEarliest($local->hora_almuerzo_entrada, $hcHoraAlmuerzoEntrada);
+                } elseif ($hcHoraAlmuerzoEntrada) {
+                    $nuevaEntBreak = $hcHoraAlmuerzoEntrada;
+                }
+
+                if ($local->hora_almuerzo_entrada !== $nuevaEntBreak || $local->sync_eal_hc == 0) {
+                    $local->hora_almuerzo_entrada = $nuevaEntBreak;
+                    $local->sync_eal_hc = 1;
+                    $haCambiado = true;
+                }
+            }
+
+            // --- Salida Final ---
+            if ($hcHoraSalida || $local->hora_salida) {
+                $nuevaSalida = $local->hora_salida;
+                if ($hcHoraSalida && $local->hora_salida) {
+                    $nuevaSalida = $this->getEarliest($local->hora_salida, $hcHoraSalida);
+                } elseif ($hcHoraSalida) {
+                    $nuevaSalida = $hcHoraSalida;
+                }
+
+                if ($local->hora_salida !== $nuevaSalida || $local->sync_sa_hc == 0) {
+                    $local->hora_salida = $nuevaSalida;
+                    $local->sync_sa_hc = 1;
+                    $haCambiado = true;
+                }
+            }
+
+            // --- Estado ---
+            $nuevoEstado = $determinarEstadoFinal(
+                $local->hora_entrada,
+                $local->hora_almuerzo_salida,
+                $local->hora_almuerzo_entrada,
+                $local->hora_salida
+            );
+
+            if ($local->estado_asistencia !== $nuevoEstado) {
+                $local->estado_asistencia = $nuevoEstado;
+                $haCambiado = true;
+            }
+
+            if ($haCambiado) {
+                $local->save();
+                return true;
+            }
+
+            return false;
+        } else {
+            $nuevoEstado = $determinarEstadoFinal(
+                $hcHoraEntrada,
+                $hcHoraAlmuerzoSalida,
+                $hcHoraAlmuerzoEntrada,
+                $hcHoraSalida
+            );
+
+            Asistencia_empleado::create([
+                'ci_empleado'           => $ci_empleado,
+                'fecha'                 => $fecha,
+                'hora_entrada'          => $hcHoraEntrada,
+                'sync_e_hc'             => $hcHoraEntrada ? 1 : 0,
+                'hora_almuerzo_salida'  => $hcHoraAlmuerzoSalida,
+                'sync_sal_hc'           => $hcHoraAlmuerzoSalida ? 1 : 0,
+                'hora_almuerzo_entrada' => $hcHoraAlmuerzoEntrada,
+                'sync_eal_hc'           => $hcHoraAlmuerzoEntrada ? 1 : 0,
+                'hora_salida'           => $hcHoraSalida,
+                'sync_sa_hc'            => $hcHoraSalida ? 1 : 0,
+                'ip_marcacion'          => '190.15.134.93',
+                'campus'                => 'Campus Nuevos Horizontes - SITU',
+                'estado_asistencia'     => 'Normal',
             ]);
 
             return true;

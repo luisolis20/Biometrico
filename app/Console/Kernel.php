@@ -13,7 +13,7 @@ class Kernel extends ConsoleKernel
     protected function schedule(Schedule $schedule): void
     {
        $schedule->command('asistencia:sync-hikcentral')
-             ->everyTenMinutes()
+             ->everyTwoMinutes()
              ->between('07:00', '20:00')
              ->appendOutputTo(storage_path('logs/sincronizacion_hikcentral.log'));
     }

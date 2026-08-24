@@ -92,8 +92,8 @@ class Asistencia_empleadoController extends Controller
                     'hora_almuerzo_entrada' => $hcHoraAlmuerzoEntrada,
                     'hora_salida'           => $hcHoraSalida,
                     'ip_marcacion'          => '190.15.134.93',
-                    'campus'                => 'Campus Universitario',
-                    'estado_asistencia'     => $hcEstadoAsistencia,
+                    'campus'                => 'Campus Nuevos Horizontes - SITU',
+                    'estado_asistencia'     => 'Normal',
                 ]);
             }
         }
