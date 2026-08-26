@@ -196,7 +196,7 @@ class InformacionPersonalController extends Controller
                         'NombCarr'         => $item->NombCarr,
                         'nivel'            => $item->nivel, // 👈 Enviado al Front
                         'hasPhoto'         => true,
-                        'estaRegistradoHC' => $statusHC
+                        'estaRegistradoHC' => $statusHC,
                     ];
                 });
 

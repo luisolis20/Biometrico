@@ -734,7 +734,7 @@ class HikcentralController extends Controller
             $fotoBase64 = base64_encode($estudiante->fotografia);
 
             // Género: HikCentral 1:Masculino, 2:Femenino (Ajustar según tu DB)
-            $gender = ($estudiante->GeneroPer === 'M') ? 1 : 2;
+            $gender = ($estudiante->GeneroPer === 'H') ? 1 : 2;
             // --- Validación y Formateo del orgIndexCode ---
 
             $departmentCode = $estudiante->codihicenter;
