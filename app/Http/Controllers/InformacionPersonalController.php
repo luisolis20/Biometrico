@@ -143,8 +143,7 @@ class InformacionPersonalController extends Controller
                     ->where('carrera.StatusCarr', 1)
                     ->whereIn('factura.tipo_documento', ['MATRICULA', 'MATRÍCULA']) // 👈 Validación de tipo de documento
                     ->where('carrera.optativa', 0) // 👈 Filtrar materias optativas
-                    ->where('carrera.NombCarr', 'NOT LIKE', '%TRABAJO DE INTEGRACIÓN CURRICULAR%') // 👈 Filtrar carreras no permitidas
-                    ->whereNotIn('detalle_matricula.nivel', [0])
+                    ->where('carrera.NombCarr', 'NOT LIKE', '%TRABAJO DE INTEGRACIÓN CURRICULAR%')
                     ->whereNotNull('carrera.codihicenter') // 👈 Filtrar carreras sin código de HikCentral
                     ->whereNotNull('informacionpersonal.fotografia');
 

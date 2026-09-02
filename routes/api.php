@@ -48,6 +48,8 @@ Route::prefix('biometrico')->group(function () {
     Route::post('attendance-report', [HikcentralController::class, 'getAttendanceReport'])->middleware('throttle:10000,1');
     Route::post('attendance-sync', [Asistencia_empleadoController::class, 'syncAttendance'])->middleware('throttle:10000,1');
     Route::post('check-local-attendance', [Asistencia_empleadoController::class, 'checkLocal'])->middleware('throttle:10000,1');
+    Route::get('get-access-levels', [HikcentralController::class, 'getAllAccessLevels'])->middleware('throttle:10000,1');
+    Route::get('get-access-person', [HikcentralController::class, 'getAccesLevelGymPerson'])->middleware('throttle:10000,1');
     
 
 

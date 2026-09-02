@@ -300,6 +300,58 @@ class HikcentralController extends Controller
             ], 500);
         }
     }
+    public function DeleteHikDocent($personCode)
+    {
+        try {
+            // 1. Definir una llave única para este estado
+            $cacheKey = "hik_status_{$personCode}";
+
+            $statusInfo = Cache::remember($cacheKey, 2, function () use ($personCode) {
+
+                $partnerKey = env('HIKCENTRAL_PARTNER_KEY');
+                $urlInfo = env('HIKCENTRAL_PERSON_INFO_URL');
+
+                $response = Http::withoutVerifying()->withHeaders([
+                    'x-ca-key' => $partnerKey,
+                    'x-ca-signature' => $this->generateSignature($urlInfo),
+                    'x-ca-signature-headers' => 'x-ca-key',
+                    'Accept' => '*/*',
+                    'Content-Type' => 'application/json'
+                ])->post($urlInfo, ['personCode' => (string)$personCode]);
+
+                $data = $response->json();
+
+                // Si la respuesta es exitosa y hay datos del usuario
+                if (isset($data['code']) && $data['code'] === "0" && !empty($data['data'])) {
+                    return [
+                        'registrado' => true,
+                        'personId'   => $data['data']['personId'] ?? null,
+                        'mensaje'    => 'Usuario encontrado'
+                    ];
+                }
+
+                // Si no está registrado
+                return [
+                    'registrado' => false,
+                    'personId'   => null,
+                    'mensaje'    => 'No registrado en HikCentral'
+                ];
+            });
+
+            return response()->json([
+                'registrado' => $statusInfo['registrado'],
+                'personId'   => $statusInfo['personId'],
+                'mensaje'    => $statusInfo['mensaje'],
+                'from_cache' => Cache::has($cacheKey)
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'registrado' => false,
+                'personId'   => null,
+                'error'      => 'Error al verificar status: ' . $e->getMessage()
+            ], 500);
+        }
+    }
     public function checkHikStatusEst($personCode)
     {
         try {
@@ -580,7 +632,6 @@ class HikcentralController extends Controller
             ->where('carrera.StatusCarr', 1)
             ->whereIn('factura.tipo_documento', ['MATRICULA', 'MATRÍCULA'])
             ->where('carrera.optativa', 0)
-            ->where('detalle_matricula.nivel', '!=', '0')
             ->whereNotNull('carrera.codihicenter')
             ->whereNotNull('informacionpersonal.fotografia');
 
@@ -721,7 +772,6 @@ class HikcentralController extends Controller
             ->where('carrera.StatusCarr', 1)
             ->whereIn('factura.tipo_documento', ['MATRICULA', 'MATRÍCULA'])
             ->where('carrera.optativa', 0)
-            ->where('detalle_matricula.nivel', '!=', '0')
             ->whereNotNull('carrera.codihicenter')
             ->whereNotNull('informacionpersonal.fotografia')
             ->first();
@@ -1874,4 +1924,56 @@ class HikcentralController extends Controller
             return response()->json(['error' => $e->getMessage()], 500);
         }
     }
+    public function getAllAccessLevels()
+    {
+        try {
+            $url = env('HIKCENTRAL_GET_ACCESS_LEVEL');
+            $partnerKey = env('HIKCENTRAL_PARTNER_KEY');
+
+            $body = [
+                'pageNo' => 1,
+                'pageSize' => 10,
+                'type' => 1
+            ];
+
+            $response = Http::withoutVerifying()->withHeaders([
+                'x-ca-key' => $partnerKey,
+                'x-ca-signature' => $this->generateSignature($url),
+                'x-ca-signature-headers' => 'x-ca-key',
+                'Accept' => '*/*',
+                'Content-Type' => 'application/json'
+            ])->post($url, $body);
+
+            return $response->json();
+        } catch (\Exception $e) {
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
+    }
+    public function getAccesLevelGymPerson()
+    {
+        try {
+            $url = env('HIKCENTRAL_GET_ACCESS_LEVEL_PERSON');
+            $partnerKey = env('HIKCENTRAL_PARTNER_KEY');
+
+            $body = [
+                'pageNo' => 1,
+                'pageSize' => 2,
+                'type' => 1,
+                'privilegeGroupId' => "9"
+            ];
+
+            $response = Http::withoutVerifying()->withHeaders([
+                'x-ca-key' => $partnerKey,
+                'x-ca-signature' => $this->generateSignature($url),
+                'x-ca-signature-headers' => 'x-ca-key',
+                'Accept' => '*/*',
+                'Content-Type' => 'application/json'
+            ])->post($url, $body);
+
+            return $response->json();
+        } catch (\Exception $e) {
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
+    }
+    
 }

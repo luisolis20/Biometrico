@@ -40,11 +40,8 @@ class SyncAsistenciaAutomatica extends Command
 
         // 1. Obtener personal Administrativo y Docente con foto
         $personal = informacionpersonal_D::select('CIInfPer', 'NombInfPer', 'ApellInfPer')
-            ->where(function ($query) {
-                $query->whereIn('TipoInfPer', ['A', 'T', 'TDO'])
-                    ->whereNotNull('fotografia');
-            })
-            ->orWhere('CIInfPer', '0800574923')
+            ->whereNotNull('fotografia')
+           ->where('StatusPer', 1)
             ->get();
         $totalPersonal = $personal->count();
         $totalSincronizados = 0;
@@ -69,9 +66,10 @@ class SyncAsistenciaAutomatica extends Command
 
                 $personId = $hikStatus['personId'];
                 $orgIndexCode = $hikStatus['orgIndexCode'];
+                $personName = $hikStatus['personName'];
 
                 // 3. Obtener sus marcaciones del día
-                $marcacionesHC = $this->getHikAttendance($ci, $nombreCompleto, $personId, $orgIndexCode, $fechaHoy);
+                $marcacionesHC = $this->getHikAttendance($ci, $personName, $personId, $orgIndexCode, $fechaHoy);
 
                 if (empty($marcacionesHC)) {
                     $this->warn("   -> Sin marcaciones en la fecha {$fechaHoy}. Saltando.");
@@ -125,7 +123,8 @@ class SyncAsistenciaAutomatica extends Command
             return [
                 'registrado'   => true,
                 'personId'     => $data['data']['personId'] ?? null,
-                'orgIndexCode' => $data['data']['orgIndexCode'] ?? null
+                'orgIndexCode' => $data['data']['orgIndexCode'] ?? null,
+                'personName'   => $data['data']['personName'] ?? ''
             ];
         }
 
@@ -152,6 +151,7 @@ class SyncAsistenciaAutomatica extends Command
 
         $beginTime = Carbon::parse($fecha)->startOfDay()->format('Y-m-d\TH:i:s') . $timezoneOffset;
         $endTime   = Carbon::parse($fecha)->endOfDay()->format('Y-m-d\TH:i:s') . $timezoneOffset;
+        
 
         $payload = [
             "attendanceReportRequest" => [
@@ -595,7 +595,7 @@ class SyncAsistenciaAutomatica extends Command
             if ($hcHoraSalida || $local->hora_salida) {
                 $nuevaSalida = $local->hora_salida;
                 if ($hcHoraSalida && $local->hora_salida) {
-                    $nuevaSalida = $this->getEarliest($local->hora_salida, $hcHoraSalida);
+                    $nuevaSalida = $this->getLatest($local->hora_salida, $hcHoraSalida);
                 } elseif ($hcHoraSalida) {
                     $nuevaSalida = $hcHoraSalida;
                 }
@@ -712,5 +712,13 @@ class SyncAsistenciaAutomatica extends Command
         if (empty($time2)) return $time1;
 
         return (strtotime($time1) < strtotime($time2)) ? $time1 : $time2;
+    }
+    private function getLatest($time1, $time2)
+    {
+        if (empty($time1)) return $time2;
+        if (empty($time2)) return $time1;
+
+        // Compara cuál es mayor y retorna esa
+        return (strtotime($time1) > strtotime($time2)) ? $time1 : $time2;
     }
 }
