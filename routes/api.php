@@ -66,6 +66,7 @@ Route::prefix('biometrico')->group(function () {
     Route::post('sync-hikdoc-update-pre-est/{ci}', [HikcentralController::class, 'syncToHikCentralUpdatePreEst'])->middleware('throttle:20000,1');
     Route::post('sync-hikdupdatedoce/{ci}', [HikcentralController::class, 'syncToHikUpdateCentral'])->middleware('throttle:20000,1'); // Estudiantes individuales
     Route::post('sync-hikdoc-est-id/{ci}', [HikcentralController::class, 'syncToHikCentralIndvEst'])->middleware('throttle:20000,1');
+    Route::post('add_level_access_gym', [HikcentralController::class, 'ADDAccesLevelGymPerson'])->middleware('throttle:20000,1');
     Route::post('sync-hikdoc-est-id-pre-est/{ci}', [HikcentralController::class, 'syncToHikCentralIndPreEst'])->middleware('throttle:20000,1');
     Route::get('clear-cache/{ci}', [HikcentralController::class, 'clearDocenteCache'])->middleware('throttle:10000,1');
     Route::get('/get-pending-sync', [HikcentralController::class, 'getPendingSync'])->middleware('throttle:10000,1');

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\informacionpersonal;
+use App\Models\RegistroTitulos;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Response;
@@ -238,6 +239,7 @@ class InformacionPersonalController extends Controller
             // 2. Intentar recuperar de caché o buscar en la DB
             $estudiante = Cache::remember($cacheKey, now()->addMinutes(1), function () use ($ci, $idperidod) {
 
+                // 1. Buscar Estudiante Matriculado
                 $item = informacionpersonal::select(
                     'informacionpersonal.CIInfPer',
                     'informacionpersonal.NombInfPer',
@@ -256,7 +258,6 @@ class InformacionPersonalController extends Controller
                     ->join('carrera', 'carrera.idCarr', '=', 'detalle_matricula.idcarr')
                     ->join('facultad', 'facultad.idfacultad', '=', 'carrera.idfacultad')
                     ->where('carrera.NombCarr', 'NOT LIKE', '%TRABAJO DE INTEGRACIÓN CURRICULAR%')
-                    // Parámetros y condiciones del WHERE
                     ->where('factura.idper', $idperidod)
                     ->where('carrera.StatusCarr', 1)
                     ->whereIn('factura.tipo_documento', ['MATRICULA', 'MATRÍCULA'])
@@ -265,7 +266,117 @@ class InformacionPersonalController extends Controller
                     ->whereNotNull('informacionpersonal.fotografia')
                     ->first();
 
+                // Si NO es matriculado, buscamos en los otros estados
                 if (!$item) {
+                    
+                    // 2. Buscar si es Graduado (registrotitulos)
+                    $res = informacionpersonal::select(
+                        'informacionpersonal.CIInfPer',
+                        'informacionpersonal.NombInfPer',
+                        'informacionpersonal.ApellInfPer',
+                        'informacionpersonal.ApellMatInfPer',
+                        'informacionpersonal.mailInst',
+                        'informacionpersonal.GeneroPer',
+                        'carrera.NombCarr',
+                        'carrera.idCarr',
+                        'facultad.siglas as siglasFacultad'
+                    )
+                        ->distinct()
+                        ->join('registrotitulos', 'registrotitulos.ciinfper', '=', 'informacionpersonal.CIInfPer')
+                        ->join('carrera', 'carrera.idCarr', '=', 'registrotitulos.idcarr')
+                        ->join('facultad', 'facultad.idfacultad', '=', 'carrera.idfacultad')
+                        ->where('registrotitulos.ciinfper', $ci)
+                        ->whereNotNull('informacionpersonal.fotografia')
+                        ->whereNotNull('registrotitulos.fechaincorporacion')
+                        ->where('registrotitulos.fechaincorporacion', '>=', now()->subYear())
+                        ->first();
+
+                    if ($res) { // <- Verificamos si encontró algo en $res
+                        return [
+                            'CIInfPer'         => $res->CIInfPer,       // Corregido: usa $res en lugar de $item
+                            'NombInfPer'       => $res->NombInfPer,
+                            'ApellInfPer'      => $res->ApellInfPer,
+                            'ApellMatInfPer'   => $res->ApellMatInfPer,
+                            'mailInst'         => $res->mailInst,
+                            'NombCarr'         => $res->NombCarr,
+                            'siglasFacultad'   => $res->siglasFacultad,
+                            'nivel'            => 'Graduado',
+                            'hasPhoto'         => true,
+                            'estaRegistradoHC' => null
+                        ];
+                    }
+
+                    // 3. Buscar si es Egresado (aptitudlegal)
+                    $res2 = informacionpersonal::select(
+                        'informacionpersonal.CIInfPer',
+                        'informacionpersonal.NombInfPer',
+                        'informacionpersonal.ApellInfPer',
+                        'informacionpersonal.ApellMatInfPer',
+                        'informacionpersonal.mailInst',
+                        'informacionpersonal.GeneroPer',
+                        'carrera.NombCarr',
+                        'carrera.idCarr',
+                        'facultad.siglas as siglasFacultad'
+                    )
+                        ->distinct()
+                        ->join('aptitudlegal', 'aptitudlegal.ciinfper', '=', 'informacionpersonal.CIInfPer')
+                        ->join('carrera', 'carrera.idCarr', '=', 'aptitudlegal.idcarr')
+                        ->join('facultad', 'facultad.idfacultad', '=', 'carrera.idfacultad')
+                        ->where('aptitudlegal.ciinfper', $ci)
+                        ->whereNotNull('informacionpersonal.fotografia')
+                        ->first();
+
+                    if ($res2) { // <- Verificamos si encontró algo en $res2
+                        return [
+                            'CIInfPer'         => $res2->CIInfPer,      // Corregido: usa $res2 en lugar de $item
+                            'NombInfPer'       => $res2->NombInfPer,
+                            'ApellInfPer'      => $res2->ApellInfPer,
+                            'ApellMatInfPer'   => $res2->ApellMatInfPer,
+                            'mailInst'         => $res2->mailInst,
+                            'NombCarr'         => $res2->NombCarr,
+                            'siglasFacultad'   => $res2->siglasFacultad,
+                            'nivel'            => 'Egresado',
+                            'hasPhoto'         => true,
+                            'estaRegistradoHC' => null
+                        ];
+                    }
+
+                    // 4. Buscar si es Egresado (actadegrado)
+                    $res3 = informacionpersonal::select(
+                        'informacionpersonal.CIInfPer',
+                        'informacionpersonal.NombInfPer',
+                        'informacionpersonal.ApellInfPer',
+                        'informacionpersonal.ApellMatInfPer',
+                        'informacionpersonal.mailInst',
+                        'informacionpersonal.GeneroPer',
+                        'carrera.NombCarr',
+                        'carrera.idCarr',
+                        'facultad.siglas as siglasFacultad'
+                    )
+                        ->distinct()
+                        ->join('actadegrado', 'actadegrado.ciinfper', '=', 'informacionpersonal.CIInfPer')
+                        ->join('carrera', 'carrera.idCarr', '=', 'actadegrado.idcarr')
+                        ->join('facultad', 'facultad.idfacultad', '=', 'carrera.idfacultad')
+                        ->where('actadegrado.ciinfper', $ci)
+                        ->whereNotNull('informacionpersonal.fotografia')
+                        ->first();
+
+                    if ($res3) { // <- Verificamos si encontró algo en $res3
+                        return [
+                            'CIInfPer'         => $res3->CIInfPer,      // Corregido: usa $res3 en lugar de $item
+                            'NombInfPer'       => $res3->NombInfPer,
+                            'ApellInfPer'      => $res3->ApellInfPer,
+                            'ApellMatInfPer'   => $res3->ApellMatInfPer,
+                            'mailInst'         => $res3->mailInst,
+                            'NombCarr'         => $res3->NombCarr,
+                            'siglasFacultad'   => $res3->siglasFacultad,
+                            'nivel'            => 'Egresado',
+                            'hasPhoto'         => true,
+                            'estaRegistradoHC' => null
+                        ];
+                    }
+
+                    // 5. Si no encontró en ninguno de los 3 casos extra, retorna null
                     return null;
                 }
 

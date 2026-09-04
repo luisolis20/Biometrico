@@ -614,26 +614,26 @@ class HikcentralController extends Controller
                 'facultad.siglas',
                 'detalle_matricula.nivel'
             )
-            ->distinct() // Equivalente a SELECT DISTINCT
-            ->join('factura', 'factura.cedula', '=', 'informacionpersonal.CIInfPer')
-            ->join('detalle_matricula', 'factura.id', '=', 'detalle_matricula.idfactura')
-            ->join('carrera', 'carrera.idCarr', '=', 'detalle_matricula.idcarr')
-            ->join('facultad', 'facultad.idfacultad', '=', 'carrera.idfacultad')
-            
-            // Subconsulta para obtener el periodo lectivo activo
-            ->where('factura.idper', function ($sub) {
-                $sub->select('idper')
-                    ->from('periodolectivo')
-                    ->where('StatusPerLec', 1)
-                    ->limit(1);
-            })
-            
-            // Nuevas condiciones solicitadas
-            ->where('carrera.StatusCarr', 1)
-            ->whereIn('factura.tipo_documento', ['MATRICULA', 'MATRÍCULA'])
-            ->where('carrera.optativa', 0)
-            ->whereNotNull('carrera.codihicenter')
-            ->whereNotNull('informacionpersonal.fotografia');
+                ->distinct() // Equivalente a SELECT DISTINCT
+                ->join('factura', 'factura.cedula', '=', 'informacionpersonal.CIInfPer')
+                ->join('detalle_matricula', 'factura.id', '=', 'detalle_matricula.idfactura')
+                ->join('carrera', 'carrera.idCarr', '=', 'detalle_matricula.idcarr')
+                ->join('facultad', 'facultad.idfacultad', '=', 'carrera.idfacultad')
+
+                // Subconsulta para obtener el periodo lectivo activo
+                ->where('factura.idper', function ($sub) {
+                    $sub->select('idper')
+                        ->from('periodolectivo')
+                        ->where('StatusPerLec', 1)
+                        ->limit(1);
+                })
+
+                // Nuevas condiciones solicitadas
+                ->where('carrera.StatusCarr', 1)
+                ->whereIn('factura.tipo_documento', ['MATRICULA', 'MATRÍCULA'])
+                ->where('carrera.optativa', 0)
+                ->whereNotNull('carrera.codihicenter')
+                ->whereNotNull('informacionpersonal.fotografia');
 
             // Aplicar el mismo filtro de carrera que la tabla
             if (!empty($carreraFilter) && $carreraFilter !== 'Todos') {
@@ -753,28 +753,28 @@ class HikcentralController extends Controller
                 'carrera.StatusCarr',
                 'detalle_matricula.nivel'
             )
-            ->distinct()
-            ->join('factura', 'factura.cedula', '=', 'informacionpersonal.CIInfPer')
-            ->join('detalle_matricula', 'factura.id', '=', 'detalle_matricula.idfactura')
-            ->join('carrera', 'carrera.idCarr', '=', 'detalle_matricula.idcarr')
-            ->join('facultad', 'facultad.idfacultad', '=', 'carrera.idfacultad')
-            ->where('informacionpersonal.CIInfPer', $ci) // Filtro específico por el CI solicitado
-            
-            // Subconsulta para el periodo lectivo activo
-            ->where('factura.idper', function ($sub) {
-                $sub->select('idper')
-                    ->from('periodolectivo')
-                    ->where('StatusPerLec', 1)
-                    ->limit(1);
-            })
-            
-            // Nuevas condiciones requeridas
-            ->where('carrera.StatusCarr', 1)
-            ->whereIn('factura.tipo_documento', ['MATRICULA', 'MATRÍCULA'])
-            ->where('carrera.optativa', 0)
-            ->whereNotNull('carrera.codihicenter')
-            ->whereNotNull('informacionpersonal.fotografia')
-            ->first();
+                ->distinct()
+                ->join('factura', 'factura.cedula', '=', 'informacionpersonal.CIInfPer')
+                ->join('detalle_matricula', 'factura.id', '=', 'detalle_matricula.idfactura')
+                ->join('carrera', 'carrera.idCarr', '=', 'detalle_matricula.idcarr')
+                ->join('facultad', 'facultad.idfacultad', '=', 'carrera.idfacultad')
+                ->where('informacionpersonal.CIInfPer', $ci) // Filtro específico por el CI solicitado
+
+                // Subconsulta para el periodo lectivo activo
+                ->where('factura.idper', function ($sub) {
+                    $sub->select('idper')
+                        ->from('periodolectivo')
+                        ->where('StatusPerLec', 1)
+                        ->limit(1);
+                })
+
+                // Nuevas condiciones requeridas
+                ->where('carrera.StatusCarr', 1)
+                ->whereIn('factura.tipo_documento', ['MATRICULA', 'MATRÍCULA'])
+                ->where('carrera.optativa', 0)
+                ->whereNotNull('carrera.codihicenter')
+                ->whereNotNull('informacionpersonal.fotografia')
+                ->first();
 
             if (!$estudiante || empty($estudiante->fotografia)) {
                 return response()->json(['error' => 'Estudiante o foto no encontrada'], 404);
@@ -1159,7 +1159,50 @@ class HikcentralController extends Controller
                 ->whereNotIn('carrera.idCarr', $carrerasAExcluir)
                 ->where('carrera.NombCarr', 'NOT LIKE', '%TRABAJO DE INTEGRACIÓN CURRICULAR%')
                 ->first();
+            // 2. INTENTO 2: Si no está matriculado, buscar como Graduado (registrotitulos)
+            if (!$estudiante) {
+                $estudiante = informacionpersonal::select(
+                    'informacionpersonal.*',
+                    'carrera.idCarr',
+                    'carrera.codihicenter',
+                    'carrera.NombCarr',
+                    'carrera.StatusCarr'
+                )
+                    ->join('registrotitulos', 'registrotitulos.ciinfper', '=', 'informacionpersonal.CIInfPer')
+                    ->join('carrera', 'carrera.idCarr', '=', 'registrotitulos.idcarr')
+                    ->where('registrotitulos.ciinfper', $ci)
+                    ->first();
+            }
 
+            // 3. INTENTO 3: Si no es graduado, buscar como Egresado (aptitudlegal)
+            if (!$estudiante) {
+                $estudiante = informacionpersonal::select(
+                    'informacionpersonal.*',
+                    'carrera.idCarr',
+                    'carrera.codihicenter',
+                    'carrera.NombCarr',
+                    'carrera.StatusCarr'
+                )
+                    ->join('aptitudlegal', 'aptitudlegal.ciinfper', '=', 'informacionpersonal.CIInfPer')
+                    ->join('carrera', 'carrera.idCarr', '=', 'aptitudlegal.idcarr')
+                    ->where('aptitudlegal.ciinfper', $ci)
+                    ->first();
+            }
+
+            // 4. INTENTO 4: Si tampoco está en aptitudlegal, buscar en actadegrado
+            if (!$estudiante) {
+                $estudiante = informacionpersonal::select(
+                    'informacionpersonal.*',
+                    'carrera.idCarr',
+                    'carrera.codihicenter',
+                    'carrera.NombCarr',
+                    'carrera.StatusCarr'
+                )
+                    ->join('actadegrado', 'actadegrado.ciinfper', '=', 'informacionpersonal.CIInfPer')
+                    ->join('carrera', 'carrera.idCarr', '=', 'actadegrado.idcarr')
+                    ->where('actadegrado.ciinfper', $ci)
+                    ->first();
+            }
             if (!$estudiante || empty($estudiante->fotografia)) {
                 return response()->json(['error' => 'Estudiante o foto no encontrada'], 404);
             }
@@ -1949,15 +1992,18 @@ class HikcentralController extends Controller
             return response()->json(['error' => $e->getMessage()], 500);
         }
     }
-    public function getAccesLevelGymPerson()
+    public function getAccesLevelGymPerson(Request $request)
     {
         try {
             $url = env('HIKCENTRAL_GET_ACCESS_LEVEL_PERSON');
             $partnerKey = env('HIKCENTRAL_PARTNER_KEY');
 
+            // Recibe el número de página enviado desde el Frontend (por defecto 1)
+            $pageNo = (int) $request->input('pageNo', 1);
+
             $body = [
-                'pageNo' => 1,
-                'pageSize' => 2,
+                'pageNo' => $pageNo,
+                'pageSize' => 500,
                 'type' => 1,
                 'privilegeGroupId' => "9"
             ];
@@ -1975,5 +2021,55 @@ class HikcentralController extends Controller
             return response()->json(['error' => $e->getMessage()], 500);
         }
     }
-    
+    public function ADDAccesLevelGymPerson(Request $request)
+    {
+        try {
+            $url = env('HIKCENTRAL_ADD_ACCESS_LEVEL_PERSON');
+            $partnerKey = env('HIKCENTRAL_PARTNER_KEY');
+
+            // Recibe el número de página enviado desde el Frontend (por defecto 1)
+            $personID = $request->input('personID');
+
+            $body = [
+                'privilegeGroupId' => "9",
+                'type' => 1,
+                "list" => [
+                    "id" => $personID,
+                ]
+            ];
+
+            $response = Http::withoutVerifying()->withHeaders([
+                'x-ca-key' => $partnerKey,
+                'x-ca-signature' => $this->generateSignature($url),
+                'x-ca-signature-headers' => 'x-ca-key',
+                'Accept' => '*/*',
+                'Content-Type' => 'application/json'
+            ])->post($url, $body);
+            $resData = $response->json();
+
+
+            if ($response->successful() && isset($resData['code']) && $resData['code'] == 0) {
+
+                return response()->json([
+                    'code' => "0",
+                    'msg'  => "Success",
+                    'data' => $resData['data']
+                ], 200);
+            } else if ($resData['code'] == "128") {
+                return response()->json([
+                    'code'    =>  "128",
+                    'msg'     => "Error al asignar nivel de acceso en HikCentral.",
+                    'details' => $resData
+                ], 200);
+            } else {
+                return response()->json([
+                    'code'    => $resData['code'] ?? "500",
+                    'msg'     => $resData['msg'] ?? "Error al asignar nivel de acceso en HikCentral",
+                    'details' => $resData
+                ], 400);
+            }
+        } catch (\Exception $e) {
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
+    }
 }
