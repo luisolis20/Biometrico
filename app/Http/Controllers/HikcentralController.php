@@ -2030,11 +2030,22 @@ class HikcentralController extends Controller
             // Recibe el número de página enviado desde el Frontend (por defecto 1)
             $personID = $request->input('personID');
 
+            // Validar que el personID se haya recibido correctamente
+            if (!$personID) {
+                return response()->json([
+                    'code' => "400",
+                    'msg'  => "El parámetro personID es obligatorio."
+                ], 400);
+            }
+
+            // Estructura corregida para HikCentral
             $body = [
                 'privilegeGroupId' => "9",
                 'type' => 1,
-                "list" => [
-                    "id" => $personID,
+                'list' => [
+                    [
+                        'id' => (string)$personID,
+                    ]
                 ]
             ];
 
@@ -2065,6 +2076,66 @@ class HikcentralController extends Controller
                 return response()->json([
                     'code'    => $resData['code'] ?? "500",
                     'msg'     => $resData['msg'] ?? "Error al asignar nivel de acceso en HikCentral",
+                    'details' => $resData
+                ], 400);
+            }
+        } catch (\Exception $e) {
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
+    }
+    public function DELETEAccesLevelGymPerson(Request $request)
+    {
+        try {
+            $url = env('HIKCENTRAL_REMOVE_ACCESS_LEVEL_PERSON');
+            $partnerKey = env('HIKCENTRAL_PARTNER_KEY');
+
+            $personID = $request->input('personID');
+
+            // Validar que el personID se haya recibido correctamente
+            if (!$personID) {
+                return response()->json([
+                    'code' => "400",
+                    'msg'  => "El parámetro personID es obligatorio."
+                ], 400);
+            }
+
+            // Estructura corregida para HikCentral
+            $body = [
+                'privilegeGroupId' => "9",
+                'type' => 1,
+                'list' => [
+                    [
+                        'id' => (string)$personID,
+                    ]
+                ]
+            ];
+
+            $response = Http::withoutVerifying()->withHeaders([
+                'x-ca-key' => $partnerKey,
+                'x-ca-signature' => $this->generateSignature($url),
+                'x-ca-signature-headers' => 'x-ca-key',
+                'Accept' => '*/*',
+                'Content-Type' => 'application/json'
+            ])->post($url, $body);
+
+            $resData = $response->json();
+
+            if ($response->successful() && isset($resData['code']) && $resData['code'] == 0) {
+                return response()->json([
+                    'code' => "0",
+                    'msg'  => "Success",
+                    'data' => $resData['data'] ?? null
+                ], 200);
+            } else if (isset($resData['code']) && $resData['code'] == "128") {
+                return response()->json([
+                    'code'    => "128",
+                    'msg'     => "Error al eliminar nivel de acceso en HikCentral.",
+                    'details' => $resData
+                ], 200);
+            } else {
+                return response()->json([
+                    'code'    => $resData['code'] ?? "500",
+                    'msg'     => $resData['msg'] ?? "Error al eliminar nivel de acceso en HikCentral",
                     'details' => $resData
                 ], 400);
             }
