@@ -39,6 +39,7 @@ Route::prefix('biometrico')->group(function () {
     Route::get('getindivEst/{ci}', [InformacionPersonalController::class, 'getEstudianteByCI'])->middleware('throttle:10000,1');
     Route::get('getindivEst-pre-est/{ci}', [InformacionPersonalController::class, 'getEstudiantesPreCI'])->middleware('throttle:10000,1');
     Route::get('gethick/{ci}', [HikcentralController::class, 'testPhotoBase64'])->middleware('throttle:10000,1');
+    Route::get('gethickVer', [HikcentralController::class, 'testPhotoVerfifBase64'])->middleware('throttle:10000,1');
     Route::get('gethick-pre-est/{ci}', [HikcentralController::class, 'testPhotoPreEstBase64'])->middleware('throttle:10000,1');
     Route::get('get-periodos-rec', [PeriodoLectivoController::class, 'getActivos'])->middleware('throttle:10000,1');
     Route::get('devices', [HikcentralController::class, 'getAllAcsDevices'])->middleware('throttle:10000,1');
@@ -50,6 +51,8 @@ Route::prefix('biometrico')->group(function () {
     Route::post('check-local-attendance', [Asistencia_empleadoController::class, 'checkLocal'])->middleware('throttle:10000,1');
     Route::get('get-access-levels', [HikcentralController::class, 'getAllAccessLevels'])->middleware('throttle:10000,1');
     Route::get('get-access-person', [HikcentralController::class, 'getAccesLevelGymPerson'])->middleware('throttle:10000,1');
+    Route::get('get-information-door', [HikcentralController::class, 'getAccesInfo'])->middleware('throttle:10000,1');
+    Route::post('eventos-puerta-asistencia', [HikcentralController::class, 'getAttendanceDoorEventsReport'])->middleware('throttle:10000,1');
     
 
 
