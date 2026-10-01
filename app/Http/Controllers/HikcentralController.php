@@ -2060,7 +2060,7 @@ class HikcentralController extends Controller
                 "personName"     => $personName,
                 "doorIndexCodes"    => ["386", "387", "388", "389", "407", "412"],
                 "pageNo"            => 1,
-                "pageSize"          => 10,
+                "pageSize"          => 100,
                 "temperatureStatus" => -1,
                 "maskStatus"        => -1,
                 "sortField"         => "SwipeTime",
