@@ -1346,7 +1346,18 @@ class HikcentralController extends Controller
             // Verificamos si HikCentral respondió con éxito (code 0)
             // Usamos == para comparar "0" o 0 indistintamente
             if ($response->successful() && isset($resData['code']) && $resData['code'] == 0) {
-
+                try {
+                    $user = Auth::user(); // Obtenemos el usuario autenticado
+                    Bitacora::create([
+                        'bt_usuario' => $user->ciinfper,
+                        'bt_fechahora' => Carbon::now(),
+                        'bt_accion' => 'SINCRONIZACIÓN HIKCENTRAL ESTUDIANTE',
+                        'bt_ippc' => $request->ip(),
+                        'bt_observacion' => "USUARIO: {$user->NombUsu} REALIZÓ: SINCRONIZACIÓN DE FOTO Y DATOS DE: {$estudiante->NombInfPer} {$estudiante->ApellInfPer} ({$estudiante->CIInfPer}) A HIKCENTRAL",
+                    ]);
+                } catch (\Exception $ex) {
+                    Log::error('Error bitácora en guardarCambios: ' . $ex->getMessage());
+                }
                 // 🔥 ACTUALIZACIÓN DE CACHÉ
                 Cache::put("hik_status_est_{$ci}", true, 200);
                 Cache::forget("foto_blob_{$ci}");
