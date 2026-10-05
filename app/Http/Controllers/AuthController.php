@@ -13,6 +13,12 @@ use App\Models\User;
 use Tymon\JWTAuth\Facades\JWTAuth;
 use App\Http\Controllers\Controller;
 use Tymon\JWTAuth\Exceptions\TokenInvalidException;
+use App\Models\Bitacora;
+use Carbon\Carbon;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\DB;
+
+
 
 class AuthController extends Controller
 {
@@ -49,7 +55,21 @@ class AuthController extends Controller
                     'mensaje' => 'Usuario correcto pero la clave es incorrecta',
                 ], Response::HTTP_UNAUTHORIZED);
             }
-    
+            // --- INICIO DE REGISTRO EN BITÁCORA ---
+            try {
+                Bitacora::create([
+                    'bt_usuario'     => $user->ciinfper,
+                    'bt_fechahora'   => Carbon::now(), // Fecha y hora actual
+                    'bt_accion'      => 'INICIO DE SESIÓN BIOMETRICO-DASHBOARD',
+                    'bt_ippc'        => $request->ip(), // Obtiene la IP del dispositivo
+                    'bt_observacion' => 'INICIO DE SESIÓN DEL USUARIO: ' . $user->NombUsu,
+                ]);
+            } catch (\Exception $e) {
+                // Logueamos el error por si falla la inserción en bitácora, 
+                // pero permitimos que el login continúe.
+                Log::error("Error al registrar bitácora: " . $e->getMessage());
+            }
+            // --- FIN DE REGISTRO EN BITÁCORA ---
             $token = auth()->login($user);
     
             return response()->json([

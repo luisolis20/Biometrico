@@ -3,17 +3,22 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use App\Models\informacionpersonal;
 use App\Models\informacionpersonal_D;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Response;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Log;
+use App\Models\Bitacora;
 use Carbon\Carbon;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class HikcentralController extends Controller
 {
@@ -615,7 +620,18 @@ class HikcentralController extends Controller
 
             if ($response->successful() && isset($resData['code']) && $resData['code'] == 0) {
                 // Dentro de syncToHikCentral, después del éxito:
-
+                try {
+                    $user = Auth::user(); // Obtenemos el usuario autenticado
+                    Bitacora::create([
+                        'bt_usuario' => $user->ciinfper,
+                        'bt_fechahora' => Carbon::now(),
+                        'bt_accion' => 'SINCRONIZACIÓN HIKCENTRAL PERSONAL UTLVTE',
+                        'bt_ippc' => $request->ip(),
+                        'bt_observacion' => "USUARIO: {$user->NombUsu} REALIZÓ: SINCRONIZACIÓN DE FOTO Y DATOS DE: {$docente->NombInfPer} {$docente->ApellInfPer} ({$docente->CIInfPer}) A HIKCENTRAL",
+                    ]);
+                } catch (\Exception $ex) {
+                    Log::error('Error bitácora en guardarCambios: ' . $ex->getMessage());
+                }
                 Cache::put("hik_status_{$ci}", true, 1800);
                 Cache::forget("foto_docente_{$ci}");
                 Cache::forget("hik_status_{$ci}");
@@ -892,7 +908,18 @@ class HikcentralController extends Controller
             // Verificamos si HikCentral respondió con éxito (code 0)
             // Usamos == para comparar "0" o 0 indistintamente
             if ($response->successful() && isset($resData['code']) && $resData['code'] == 0) {
-
+                try {
+                    $user = Auth::user(); // Obtenemos el usuario autenticado
+                    Bitacora::create([
+                        'bt_usuario' => $user->ciinfper,
+                        'bt_fechahora' => Carbon::now(),
+                        'bt_accion' => 'SINCRONIZACIÓN HIKCENTRAL ESTUDIANTE',
+                        'bt_ippc' => $request->ip(),
+                        'bt_observacion' => "USUARIO: {$user->NombUsu} REALIZÓ: SINCRONIZACIÓN DE FOTO Y DATOS DE: {$estudiante->NombInfPer} {$estudiante->ApellInfPer} ({$estudiante->CIInfPer}) A HIKCENTRAL",
+                    ]);
+                }catch (\Exception $ex) {
+                    Log::error('Error bitácora en guardarCambios: ' . $ex->getMessage());
+                }
                 // 🔥 ACTUALIZACIÓN DE CACHÉ
                 Cache::put("hik_status_est_{$ci}", true, 1800);
                 Cache::forget("foto_blob_{$ci}");
@@ -1426,6 +1453,18 @@ class HikcentralController extends Controller
 
             if ($response->successful() && isset($resData['code']) && $resData['code'] == 0) {
                 // Limpiar caché de foto vieja
+                try {
+                    $user = Auth::user(); // Obtenemos el usuario autenticado
+                    Bitacora::create([
+                        'bt_usuario' => $user->ciinfper,
+                        'bt_fechahora' => Carbon::now(),
+                        'bt_accion' => 'ACTUALIZACIÓN HIKCENTRAL ESTUDIANTE',
+                        'bt_ippc' => $request->ip(),
+                        'bt_observacion' => "USUARIO: {$user->NombUsu} REALIZÓ: ACTUALIZACIÓN DE FOTO Y DATOS DE: {$estudiante->NombInfPer} {$estudiante->ApellInfPer} ({$estudiante->CIInfPer}) A HIKCENTRAL",
+                    ]);
+                } catch (\Exception $ex) {
+                    Log::error('Error bitácora en guardarCambios: ' . $ex->getMessage());
+                }
                 Cache::put("hik_status_est_{$ci}", true, 200);
                 Cache::forget("foto_blob_{$ci}");
                 Cache::forget("hik_status_est_{$ci}");
@@ -1578,6 +1617,18 @@ class HikcentralController extends Controller
 
 
             if ($response->successful() && isset($resData['code']) && $resData['code'] == 0) {
+                try {
+                    $user = Auth::user(); // Obtenemos el usuario autenticado
+                    Bitacora::create([
+                        'bt_usuario' => $user->ciinfper,
+                        'bt_fechahora' => Carbon::now(),
+                        'bt_accion' => 'ACTUALIZACIÓN HIKCENTRAL PERSONAL UTLVTE',
+                        'bt_ippc' => $request->ip(),
+                        'bt_observacion' => "USUARIO: {$user->NombUsu} REALIZÓ: ACTUALIZACIÓN DE FOTO Y DATOS DE: {$docente->NombInfPer} {$docente->ApellInfPer} ({$docente->CIInfPer}) A HIKCENTRAL",
+                    ]);
+                } catch (\Exception $ex) {
+                    Log::error('Error bitácora en guardarCambios: ' . $ex->getMessage());
+                }
                 // Limpiar caché de foto vieja
                 Cache::forget("foto_docente_{$ci}");
                 Cache::forget("hik_status_{$ci}");
