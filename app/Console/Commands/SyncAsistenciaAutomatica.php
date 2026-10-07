@@ -69,27 +69,19 @@ class SyncAsistenciaAutomatica extends Command
                 $personName = $hikStatus['personName'];
 
                 // 3. Obtener sus marcaciones del día
-                $marcacionesHC = $this->getHikAttendance($ci, $personName, $personId, $orgIndexCode, $fechaHoy);
+                $eventosHC = $this->getHikDoorEvents($ci, $personName, $fechaHoy);
 
-                if (empty($marcacionesHC)) {
-                    $this->warn("   -> Sin marcaciones en la fecha {$fechaHoy}. Saltando.");
+                if (empty($eventosHC)) {
+                    $this->warn("   -> Sin marcaciones/eventos en la fecha {$fechaHoy}. Saltando.");
                     continue;
                 }
 
                 // 4. Sincronizar con la BD Local
-                $huboCambios = false;
-                foreach ($marcacionesHC as $hc) {
-                    // Si procesarSincronizacion retorna true, significa que insertó o actualizó un dato
-                    if ($this->procesarSincronizacion2($ci, $fechaHoy, $hc)) {
-                        $huboCambios = true;
-                    }
-                }
-
-                if ($huboCambios) {
+                if ($this->procesarEventosSincronizacion($ci, $fechaHoy, $eventosHC)) {
                     $this->info("   -> ¡Datos sincronizados exitosamente!");
                     $totalSincronizados++;
                 } else {
-                    $this->line("   -> Asistencia ya estaba sincronizada (sin cambios nuevos).");
+                    $this->line("   -> Asistencia ya estaba sincronizada (sin cambios nuevos o no aplica).");
                 }
             } catch (\Exception $e) {
                 Log::error("Error sincronizando CI {$ci}: " . $e->getMessage());
@@ -143,6 +135,286 @@ class SyncAsistenciaAutomatica extends Command
 
         return base64_encode(hash_hmac('sha256', $stringToSign, $partnerSecret, true));
     }
+    private function getHikDoorEvents($personCode, $personName, $fecha)
+    {
+        $partnerKey = env('HIKCENTRAL_PARTNER_KEY');
+        $urlEvents = env('HIKCENTRAL_GET_EVENTS'); // Ejemplo: host/artemis/api/acs/v1/door/events
+        $timezoneOffset = '-05:00';
+
+        $beginTime = Carbon::parse($fecha)->startOfDay()->format('Y-m-d\TH:i:s') . $timezoneOffset;
+        $endTime   = Carbon::parse($fecha)->endOfDay()->format('Y-m-d\TH:i:s') . $timezoneOffset;
+        
+        $payload = [
+            "startTime"      => $beginTime,
+            "endTime"        => $endTime,
+            "personName"     => $personName,
+            "doorIndexCodes" => [
+                "14", "19", "23", "24", "25", "26", "44", "150", "154", "155", 
+                "156", "157", "174", "175", "176", "177", "195", "200", "205", 
+                "210", "215", "220", "225", "229", "230", "231", "232", "249", 
+                "250", "251", "252", "269", "270", "271", "272", "290", "305", 
+                "310", "315", "320", "335", "355", "365", "370", "375", "380", 
+                "444", "448"
+            ],
+            "pageNo"            => 1,
+            "pageSize"          => 400,
+            "temperatureStatus" => -1,
+            "maskStatus"        => -1,
+            "sortField"         => "SwipeTime",
+            "orderType"         => 0,
+        ];
+
+        $response = Http::withoutVerifying()->withHeaders([
+            'x-ca-key' => $partnerKey,
+            'x-ca-signature' => $this->generateSignature($urlEvents),
+            'x-ca-signature-headers' => 'x-ca-key',
+            'Accept' => '*/*',
+            'Content-Type' => 'application/json'
+        ])->post($urlEvents, $payload);
+
+        $resData = $response->json();
+
+        // En la API de eventos de Artemis, normalmente la lista de eventos viene en ['data']['list']
+        return $resData['data']['list'] ?? [];
+    }
+    private function procesarEventosSincronizacion($ci_empleado, $fecha, $eventos)
+    {
+        // 1. Transformar y calcular segundos desde la medianoche para cada evento
+        $marcaciones = [];
+        foreach ($eventos as $evt) {
+            $rawTime = $evt['swipeTime'] ?? $evt['eventTime'] ?? null;
+            if (!$rawTime) continue;
+
+            $carbonTime = \Carbon\Carbon::parse($rawTime);
+            $segundos = $carbonTime->hour * 3600 + $carbonTime->minute * 60 + $carbonTime->second;
+            
+            $marcaciones[] = [
+                'timeStr'  => $carbonTime->format('Y-m-d H:i:s'),
+                'segundos' => $segundos
+            ];
+        }
+
+        // Ordenar estrictamente por tiempo
+        usort($marcaciones, function($a, $b) {
+            return $a['segundos'] <=> $b['segundos'];
+        });
+
+        // 2. Consultar registro local en BD PRIMERO para tener contexto de la App
+        $local = Asistencia_empleado::where('ci_empleado', $ci_empleado)
+            ->where('fecha', $fecha)
+            ->first();
+
+        $hcHoraEntrada = null;
+        $hcHoraAlmuerzoSalida = null;
+        $hcHoraAlmuerzoEntrada = null;
+        $hcHoraSalida = null;
+
+        // --- ENTRADA TRABAJO (04:00 a 10:00) ---
+        $entradas = array_filter($marcaciones, fn($m) => $m['segundos'] >= 14400 && $m['segundos'] <= 36000);
+        if (!empty($entradas)) {
+            $hcHoraEntrada = reset($entradas)['timeStr']; 
+        }
+
+        // --- BREAK (12:00 a 14:00) CON INTELIGENCIA HÍBRIDA ---
+        $marcacionesBreak = array_filter($marcaciones, fn($m) => $m['segundos'] >= 43200 && $m['segundos'] <= 50400);
+        
+        if (!empty($marcacionesBreak)) {
+            if (count($marcacionesBreak) >= 2) {
+                // Si el empleado usó HikCentral para ambas (salida y regreso)
+                $hcHoraAlmuerzoSalida = reset($marcacionesBreak)['timeStr'];
+                $hcHoraAlmuerzoEntrada = end($marcacionesBreak)['timeStr'];
+            } else {
+                // Si SOLO HAY UNA marcación de HikCentral en el rango de break
+                $unicaMarcacionBreak = reset($marcacionesBreak)['timeStr'];
+
+                if ($local && $local->hora_almuerzo_salida) {
+                    // Si la App ya registró la salida, y esta de HC es posterior, HC es el Regreso (Entrada)
+                    if (strtotime($unicaMarcacionBreak) > strtotime($local->hora_almuerzo_salida)) {
+                        $hcHoraAlmuerzoEntrada = $unicaMarcacionBreak;
+                    } else {
+                        $hcHoraAlmuerzoSalida = $unicaMarcacionBreak;
+                    }
+                } elseif ($local && $local->hora_almuerzo_entrada && !$local->hora_almuerzo_salida) {
+                    // Si la App registró el regreso pero falta la salida, y esta de HC es anterior, HC es la Salida
+                    if (strtotime($unicaMarcacionBreak) < strtotime($local->hora_almuerzo_entrada)) {
+                        $hcHoraAlmuerzoSalida = $unicaMarcacionBreak;
+                    } else {
+                        $hcHoraAlmuerzoEntrada = $unicaMarcacionBreak;
+                    }
+                } else {
+                    // Si la BD está vacía en almuerzo, asumimos que es la Salida
+                    $hcHoraAlmuerzoSalida = $unicaMarcacionBreak;
+                }
+            }
+        }
+
+        // --- SALIDA TRABAJO (14:00 a 23:00) ---
+        $salidas = array_filter($marcaciones, fn($m) => $m['segundos'] >= 50400 && $m['segundos'] <= 82800);
+        if (!empty($salidas)) {
+            $hcHoraSalida = end($salidas)['timeStr'];
+        }
+
+        // --- VALIDACIONES DE REGLA DE 20 MINUTOS DEL BREAK ---
+        if ($hcHoraAlmuerzoEntrada) {
+            $soloHora = \Carbon\Carbon::parse($hcHoraAlmuerzoEntrada)->format('H:i:s');
+            if ($soloHora >= '15:00:00' || ($hcHoraSalida && $hcHoraAlmuerzoEntrada === $hcHoraSalida)) {
+                $hcHoraAlmuerzoEntrada = null;
+            }
+
+            if ($hcHoraAlmuerzoEntrada) {
+                $salidaRef = null;
+                if ($local && $local->hora_almuerzo_salida) {
+                    $salidaRef = \Carbon\Carbon::parse($local->hora_almuerzo_salida);
+                } elseif ($hcHoraAlmuerzoSalida) {
+                    $salidaRef = \Carbon\Carbon::parse($hcHoraAlmuerzoSalida);
+                }
+
+                if ($salidaRef) {
+                    $minutosTranscurridos = $salidaRef->diffInMinutes(\Carbon\Carbon::parse($hcHoraAlmuerzoEntrada), false);
+                    if ($minutosTranscurridos < 20) {
+                        $hcHoraAlmuerzoEntrada = null;
+                    }
+                }
+            }
+        }
+
+        $tieneMarcacionesHC = $hcHoraEntrada || $hcHoraSalida || $hcHoraAlmuerzoEntrada || $hcHoraAlmuerzoSalida;
+
+        if (!$local && !$tieneMarcacionesHC) {
+            return false;
+        }
+
+        $determinarEstadoFinal = function ($hEnt, $hSalBreak, $hEntBreak, $hSal) {
+            if ($hEnt && $hSal) return 'Normal';
+            return 'Normal';
+        };
+
+        // Función auxiliar para normalizar horas a string estricto 'Y-m-d H:i:s'
+        $normalizarHora = function($hora) {
+            return $hora ? \Carbon\Carbon::parse($hora)->format('Y-m-d H:i:s') : null;
+        };
+
+        // 3. Actualización o Creación en BD Local
+        if ($local) {
+            $haCambiado = false;
+
+            // --- Entrada ---
+            if ($hcHoraEntrada || $local->hora_entrada) {
+                $nuevaEntrada = $local->hora_entrada;
+                if ($hcHoraEntrada && $local->hora_entrada) {
+                    $nuevaEntrada = $this->getEarliest($local->hora_entrada, $hcHoraEntrada);
+                } elseif ($hcHoraEntrada) {
+                    $nuevaEntrada = $hcHoraEntrada;
+                }
+
+                $horaLocalStr = $normalizarHora($local->hora_entrada);
+                $horaNuevaStr = $normalizarHora($nuevaEntrada);
+
+                if ($horaLocalStr !== $horaNuevaStr || $local->sync_e_hc == 0) {
+                    $local->hora_entrada = $horaNuevaStr;
+                    $local->sync_e_hc = 1;
+                    $haCambiado = true;
+                }
+            }
+
+            // --- Salida Almuerzo ---
+            if ($hcHoraAlmuerzoSalida || $local->hora_almuerzo_salida) {
+                $nuevaSalBreak = $local->hora_almuerzo_salida;
+                if ($hcHoraAlmuerzoSalida && $local->hora_almuerzo_salida) {
+                    $nuevaSalBreak = $this->getEarliest($local->hora_almuerzo_salida, $hcHoraAlmuerzoSalida);
+                } elseif ($hcHoraAlmuerzoSalida) {
+                    $nuevaSalBreak = $hcHoraAlmuerzoSalida;
+                }
+
+                $horaLocalStr = $normalizarHora($local->hora_almuerzo_salida);
+                $horaNuevaStr = $normalizarHora($nuevaSalBreak);
+
+                if ($horaLocalStr !== $horaNuevaStr || $local->sync_sal_hc == 0) {
+                    $local->hora_almuerzo_salida = $horaNuevaStr;
+                    $local->sync_sal_hc = 1;
+                    $haCambiado = true;
+                }
+            }
+
+            // --- Entrada Almuerzo ---
+            if ($hcHoraAlmuerzoEntrada || $local->hora_almuerzo_entrada) {
+                $nuevaEntBreak = $local->hora_almuerzo_entrada;
+                if ($hcHoraAlmuerzoEntrada && $local->hora_almuerzo_entrada) {
+                    $nuevaEntBreak = $this->getEarliest($local->hora_almuerzo_entrada, $hcHoraAlmuerzoEntrada);
+                } elseif ($hcHoraAlmuerzoEntrada) {
+                    $nuevaEntBreak = $hcHoraAlmuerzoEntrada;
+                }
+
+                $horaLocalStr = $normalizarHora($local->hora_almuerzo_entrada);
+                $horaNuevaStr = $normalizarHora($nuevaEntBreak);
+
+                if ($horaLocalStr !== $horaNuevaStr || $local->sync_eal_hc == 0) {
+                    $local->hora_almuerzo_entrada = $horaNuevaStr;
+                    $local->sync_eal_hc = 1;
+                    $haCambiado = true;
+                }
+            }
+
+            // --- Salida Final ---
+            if ($hcHoraSalida || $local->hora_salida) {
+                $nuevaSalida = $local->hora_salida;
+                if ($hcHoraSalida && $local->hora_salida) {
+                    $nuevaSalida = $this->getLatest($local->hora_salida, $hcHoraSalida);
+                } elseif ($hcHoraSalida) {
+                    $nuevaSalida = $hcHoraSalida;
+                }
+
+                $horaLocalStr = $normalizarHora($local->hora_salida);
+                $horaNuevaStr = $normalizarHora($nuevaSalida);
+
+                if ($horaLocalStr !== $horaNuevaStr || $local->sync_sa_hc == 0) {
+                    $local->hora_salida = $horaNuevaStr;
+                    $local->sync_sa_hc = 1;
+                    $haCambiado = true;
+                }
+            }
+
+            // --- Estado ---
+            $nuevoEstado = $determinarEstadoFinal(
+                $local->hora_entrada,
+                $local->hora_almuerzo_salida,
+                $local->hora_almuerzo_entrada,
+                $local->hora_salida
+            );
+
+            if ($local->estado_asistencia !== $nuevoEstado) {
+                $local->estado_asistencia = $nuevoEstado;
+                $haCambiado = true;
+            }
+
+            if ($haCambiado) {
+                $local->save();
+                return true;
+            }
+
+            return false;
+
+        } else {
+            // Crea un nuevo registro
+            Asistencia_empleado::create([
+                'ci_empleado'           => $ci_empleado,
+                'fecha'                 => $fecha,
+                'hora_entrada'          => $hcHoraEntrada,
+                'sync_e_hc'             => $hcHoraEntrada ? 1 : 0,
+                'hora_almuerzo_salida'  => $hcHoraAlmuerzoSalida,
+                'sync_sal_hc'           => $hcHoraAlmuerzoSalida ? 1 : 0,
+                'hora_almuerzo_entrada' => $hcHoraAlmuerzoEntrada,
+                'sync_eal_hc'           => $hcHoraAlmuerzoEntrada ? 1 : 0,
+                'hora_salida'           => $hcHoraSalida,
+                'sync_sa_hc'            => $hcHoraSalida ? 1 : 0,
+                'ip_marcacion'          => '190.15.134.93',
+                'campus'                => 'Campus Nuevos Horizontes - SITU',
+                'estado_asistencia'     => 'Normal',
+            ]);
+
+            return true;
+        }
+    }
     private function getHikAttendance($personCode, $personName, $personId, $orgIndexCode, $fecha)
     {
         $partnerKey = env('HIKCENTRAL_PARTNER_KEY');
@@ -183,6 +455,7 @@ class SyncAsistenciaAutomatica extends Command
         // Extraer los registros (records) del array. Ajusta esto según cómo HikCentral te devuelva la data.
         return $resData['data']['record'] ?? [];
     }
+    
     private function procesarSincronizacion($ci_empleado, $fecha, $hc)
     {
         // 1. Validar el Estado de Asistencia devuelto por HC

@@ -68,7 +68,6 @@ class Asistencia_empleadoController extends Controller
             $hcHoraAlmuerzoSalida  = $this->parseHikCentralDateTime($hc['hora_almuerzo_salida'] ?? null);
             $hcHoraAlmuerzoEntrada = $this->parseHikCentralDateTime($hc['hora_almuerzo_entrada'] ?? null);
             $hcHoraSalida          = $this->parseHikCentralDateTime($hc['hora_salida'] ?? null);
-            $hcEstadoAsistencia     = $hc['estado_asistencia'] ?? null;
 
             // Buscar si ya existe la marcación local para esa fecha
             $local = Asistencia_empleado::where('ci_empleado', $ci_empleado)
@@ -88,9 +87,13 @@ class Asistencia_empleadoController extends Controller
                     'ci_empleado'           => $ci_empleado,
                     'fecha'                 => $fecha,
                     'hora_entrada'          => $hcHoraEntrada,
+                    'sync_e_hc'             => $hcHoraEntrada ? 0 : 1,
                     'hora_almuerzo_salida'  => $hcHoraAlmuerzoSalida,
+                    'sync_sal_hc'           => $hcHoraAlmuerzoSalida ? 0 : 1,
                     'hora_almuerzo_entrada' => $hcHoraAlmuerzoEntrada,
+                    'sync_eal_hc'           => $hcHoraAlmuerzoEntrada ? 0 : 1,
                     'hora_salida'           => $hcHoraSalida,
+                    'sync_sa_hc'            => $hcHoraSalida ? 0 : 1,
                     'ip_marcacion'          => '190.15.134.93',
                     'campus'                => 'Campus Nuevos Horizontes - SITU',
                     'estado_asistencia'     => 'Normal',

@@ -53,6 +53,7 @@ Route::prefix('biometrico')->group(function () {
     Route::get('get-access-person', [HikcentralController::class, 'getAccesLevelGymPerson'])->middleware('throttle:10000,1');
     Route::get('get-information-door', [HikcentralController::class, 'getAccesInfo'])->middleware('throttle:10000,1');
     Route::post('eventos-puerta-asistencia', [HikcentralController::class, 'getAttendanceDoorEventsReport'])->middleware('throttle:10000,1');
+    Route::post('eventos-puerta-asistencia-v2', [HikcentralController::class, 'getAttendanceDoorV2EventsReport'])->middleware('throttle:10000,1');
     
 
 

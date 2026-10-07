@@ -2063,16 +2063,13 @@ class HikcentralController extends Controller
         // Validamos los parámetros de entrada indispensables
         $request->validate([
             'personCode' => 'required|string',
-            'personID'   => 'required',
             'startTime'  => 'nullable|string', // Formato esperado: Y-m-d (Ej: 2026-06-05)
             'endTime'    => 'nullable|string',   // Formato esperado: Y-m-d (Ej: 2026-06-05)
             'doorCode'   => 'nullable|string',
         ]);
 
         $personCode = $request->input('personCode');
-        $personID = $request->input('personID');
         $partnerKey = env('HIKCENTRAL_PARTNER_KEY');
-        $doorCode   = $request->input('doorCode', '386');
         $timezoneOffset = '-05:00';
 
         // 2. Forzamos el formato estricto: YYYY-MM-DDTHH:mm:ss más el offset
@@ -2123,6 +2120,97 @@ class HikcentralController extends Controller
                 "doorIndexCodes"    => ["386", "387", "388", "389", "407", "412"],
                 "pageNo"            => 1,
                 "pageSize"          => 100,
+                "temperatureStatus" => -1,
+                "maskStatus"        => -1,
+                "sortField"         => "SwipeTime",
+                "orderType"         => 0,
+                // "personId"       => (string)$personId, 
+                //"personCode"        => (string)$personCode    
+            ];
+
+            // PASO 3: Consumir el endpoint de Asistencia
+            $attendanceResponse = Http::withoutVerifying()->withHeaders([
+                'x-ca-key' => $partnerKey,
+                'x-ca-signature' => $this->generateSignature($urlAttendance),
+                'x-ca-signature-headers' => 'x-ca-key',
+                'Accept' => '*/*',
+                'Content-Type' => 'application/json'
+            ])->post($urlAttendance, $payload);
+
+            // Retornamos directamente la respuesta mapeada del servidor Artemis
+            return response()->json($attendanceResponse->json(), $attendanceResponse->status());
+        } catch (\Exception $e) {
+            Log::error("Error en HikAttendanceController: " . $e->getMessage());
+            return response()->json([
+                'error' => 'Hubo un fallo en la comunicación con el servidor de asistencia.',
+                'details' => $e->getMessage()
+            ], 500);
+        }
+    }
+    public function getAttendanceDoorV2EventsReport(Request $request)
+    {
+        // Validamos los parámetros de entrada indispensables
+        $request->validate([
+            'personCode' => 'required|string',
+            'startTime'  => 'nullable|string', // Formato esperado: Y-m-d (Ej: 2026-06-05)
+            'endTime'    => 'nullable|string', 
+        ]);
+
+        $personCode = $request->input('personCode');
+        $partnerKey = env('HIKCENTRAL_PARTNER_KEY');
+        $timezoneOffset = '-05:00';
+
+        // 2. Forzamos el formato estricto: YYYY-MM-DDTHH:mm:ss más el offset
+        $startTime = $request->input('startTime')
+            ? Carbon::parse($request->input('startTime'))->startOfDay()->format('Y-m-d\TH:i:s') . $timezoneOffset
+            : Carbon::now()->startOfDay()->format('Y-m-d\TH:i:s') . $timezoneOffset;
+
+        $endTime = $request->input('endTime')
+            ? Carbon::parse($request->input('endTime'))->endOfDay()->format('Y-m-d\TH:i:s') . $timezoneOffset
+            : Carbon::now()->endOfDay()->format('Y-m-d\TH:i:s') . $timezoneOffset;
+
+        try {
+            // PASO 1: Obtener los datos base de la persona desde HikCentral
+            $urlInfo = env('HIKCENTRAL_PERSON_INFO_URL');
+
+            $infoResponse = Http::withoutVerifying()->withHeaders([
+                'x-ca-key' => $partnerKey,
+                'x-ca-signature' => $this->generateSignature($urlInfo),
+                'x-ca-signature-headers' => 'x-ca-key',
+                'Accept' => '*/*',
+                'Content-Type' => 'application/json'
+            ])->post($urlInfo, ['personCode' => $personCode]);
+
+            $personData = $infoResponse->json();
+
+            // Verificamos si la API de HikCentral respondió con éxito y data válida
+            if (!isset($personData['data']) || empty($personData['data'])) {
+                return response()->json([
+                    'error' => 'No se encontró información del empleado con el código provisto en HikCentral.'
+                ], 404);
+            }
+
+            // Extraemos las IDs de control que exige de forma estricta el endpoint de asistencia
+            $personId     = $personData['data']['personId'] ?? null;
+            $orgIndexCode = $personData['data']['orgIndexCode'] ?? null;
+            $personName   = $personData['data']['personName'] ?? '';
+
+            if (!$personId) {
+                return response()->json(['error' => 'La persona no cuenta con un ID válido asignado.'], 422);
+            }
+            $urlAttendance = env('HIKCENTRAL_GET_EVENTS');
+
+            $payload = [
+                "startTime"         => $startTime,
+                "endTime"           => $endTime,
+                //"eventType"      => 198914,       
+                "personName"     => $personName,
+                "doorIndexCodes"    => ["14", "19", "23", "24", "25", "26",
+                "44","150","154","155","156","157","174","175","176","177","195","200","205","210",
+                "215","220","225","229","230","231","232","249","250","251","252","269","270","271",
+                "272","290","305","310","315","320","335","355","365","370","375","380","444","448"],
+                "pageNo"            => 1,
+                "pageSize"          => 400,
                 "temperatureStatus" => -1,
                 "maskStatus"        => -1,
                 "sortField"         => "SwipeTime",
