@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Cache;
 use App\Models\Bitacora;
+use App\Models\InvitadoHikcentral;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -665,6 +666,107 @@ class HikcentralController extends Controller
             return response()->json(['error' => 'Error interno: ' . $e->getMessage()], 500);
         }
     }
+    public function syncInvitadosToHikCentral(Request $request, $ci)
+    {
+        try {
+            // 1. Obtener datos del docente desde el SIAD
+            $invitado = InvitadoHikcentral::where('cedula', $ci)->first();
+            if (!$invitado) {
+                return response()->json([
+                    'code' => "404",
+                    'msg'  => "El invitado con cédula {$ci} no fue encontrado en la base de datos."
+                ], 404);
+            }
+            $faces = [];
+            if (!empty($invitado->foto)) {
+                $fotoPath = public_path("Documentos/Biometrico/Invitados/Fotos/{$ci}/{$invitado->foto}");
+
+                if (File::exists($fotoPath)) {
+                    $fotoContent = File::get($fotoPath);
+                    $fotoBase64  = base64_encode($fotoContent);
+                    $faces[]     = ["faceData" => $fotoBase64];
+                } else {
+                    Log::warning("No se encontró la foto física para la CI {$ci} en la ruta: {$fotoPath}");
+                }
+            }
+            $beginTime = $invitado->begin_time
+                ? Carbon::parse($invitado->begin_time)->toIso8601String()
+                : now()->toIso8601String();
+
+            $endTime = $invitado->end_time
+                ? Carbon::parse($invitado->end_time)->toIso8601String()
+                : now()->addYears(10)->toIso8601String();
+
+
+            // 3. Construir el JSON para HikCentral
+            $body = [
+                "personCode"       => (string)$invitado->cedula,
+                "personFamilyName" => $invitado->apellidos,
+                "personGivenName"  => $invitado->nombres,
+                "gender"           => $invitado->genero,
+                "orgIndexCode"     => $invitado->codigo_departamento, // Ajustar según tu estructura en HikCentral
+                "remark"           => "Sincronizado desde SIAD - ",
+                "email"            => $invitado->correo ?? "",
+                "faces"            => $faces,
+                // Si tienes tarjetas en la DB, agrégalas aquí. Si no, enviar vacío o remover.
+                "cards" => [
+                    ["cardNo" => (string)$invitado->cedula]
+                ],
+                "beginTime"        => $beginTime,
+                "endTime"          => $endTime,
+            ];
+
+            $partnerKey = env('HIKCENTRAL_PARTNER_KEY');
+            $urlInfo = env('HIKCENTRAL_ADD_PERSON');
+            $response = Http::withoutVerifying()->withHeaders([
+                'x-ca-key' => $partnerKey,
+                'x-ca-signature' => $this->generateSignature($urlInfo),
+                'x-ca-signature-headers' => 'x-ca-key',
+                'Accept' => '*/*',
+                'Content-Type' => 'application/json'
+            ])->post($urlInfo, $body);
+            $resData = $response->json();
+
+            if ($response->successful() && isset($resData['code']) && $resData['code'] == 0) {
+                // Dentro de syncToHikCentral, después del éxito:
+                try {
+                    $user = Auth::user(); // Obtenemos el usuario autenticado
+                    Bitacora::create([
+                        'bt_usuario' => $user->ciinfper,
+                        'bt_fechahora' => Carbon::now(),
+                        'bt_accion' => 'SINCRONIZACIÓN HIKCENTRAL INVITADO UTLVTE',
+                        'bt_ippc' => $request->ip(),
+                        'bt_observacion' => "USUARIO: {$user->NombUsu} REALIZÓ: SINCRONIZACIÓN DE FOTO Y DATOS DE: {$invitado->nombres} {$invitado->apellidos} ({$invitado->cedula}) A HIKCENTRAL",
+                    ]);
+                } catch (\Exception $ex) {
+                    Log::error('Error bitácora en guardarCambios: ' . $ex->getMessage());
+                }
+
+                // RETORNO CRÍTICO: Debe llevar 'code' y 'msg' para tu JS
+                return response()->json([
+                    'code' => "0",
+                    'msg'  => "Success",
+                    'data' => $resData['data'] ?? $ci // Retorna el personId de HC o el CI
+                ], 200);
+            } else if ($resData['code'] == "131") {
+
+                return response()->json([
+                    'code'    =>  "131",
+                    'msg'     => "El personal ya está registrado en HikCentral.",
+                    'details' => $resData
+                ], 200);
+            } else {
+                // Si HikCentral devuelve error (ej. persona ya existe o error de parámetros)
+                return response()->json([
+                    'code'    => $resData['code'] ?? "500",
+                    'msg'     => $resData['msg'] ?? "Error desconocido en HikCentral",
+                    'details' => $resData
+                ], 400);
+            }
+        } catch (\Throwable $e) {
+            return response()->json(['error' => 'Error interno: ' . $e->getMessage()], 500);
+        }
+    }
     public function getPendingSyncEst(Request $request)
     {
         try {
@@ -917,7 +1019,7 @@ class HikcentralController extends Controller
                         'bt_ippc' => $request->ip(),
                         'bt_observacion' => "USUARIO: {$user->NombUsu} REALIZÓ: SINCRONIZACIÓN DE FOTO Y DATOS DE: {$estudiante->NombInfPer} {$estudiante->ApellInfPer} ({$estudiante->CIInfPer}) A HIKCENTRAL",
                     ]);
-                }catch (\Exception $ex) {
+                } catch (\Exception $ex) {
                     Log::error('Error bitácora en guardarCambios: ' . $ex->getMessage());
                 }
                 // 🔥 ACTUALIZACIÓN DE CACHÉ
@@ -1764,6 +1866,76 @@ class HikcentralController extends Controller
             return response()->json(['identicas' => false, 'error' => $e->getMessage()], 500);
         }
     }
+    public function compararFotosHCKWithDBINV($ci)
+    {
+        try {
+            // 1. Definir llave única para la comparación
+            $cacheKey = "compare_result_{$ci}";
+
+            // 2. Cachear el resultado por 30 minutos
+            $resultado = Cache::remember($cacheKey, 1800, function () use ($ci) {
+
+                // Reutilizamos el método que obtiene la foto de HikCentral
+                $resHik = $this->getHikPhotoBase64($ci);
+                $dataHik = $resHik->getData();
+
+                if (isset($dataHik->error)) {
+                    // Si hay error, no devolvemos nada para que no se cachee el fallo
+                    return null;
+                }
+
+                // Preparar imagen HikCentral
+                $pureHik = $dataHik->base64;
+                if (strpos($pureHik, 'base64,') !== false) {
+                    $pureHik = explode('base64,', $pureHik)[1];
+                }
+                $binHik = base64_decode(preg_replace('/\s+/', '', $pureHik));
+
+                // Preparar imagen Local desde el Sistema de Archivos
+                $personaLocal = InvitadoHikcentral::where('cedula', $ci)->select('foto')->first();
+
+                if (!$personaLocal || !$personaLocal->foto) {
+                    return ['error' => 'No existe registro de foto local para comparar'];
+                }
+
+                // Construir la ruta absoluta donde se guardó la foto
+                $fotoPath = public_path("Documentos/Biometrico/Invitados/Fotos/{$ci}/{$personaLocal->foto}");
+
+                // Verificar si el archivo físico existe en el servidor
+                if (!File::exists($fotoPath)) {
+                    return ['error' => "No se encontró el archivo físico de la foto en la ruta: {$fotoPath}"];
+                }
+
+                // Leer los bytes binarios reales de la imagen local
+                $binLocal = File::get($fotoPath);
+
+                // 3. Ejecutar comparación visual pesada
+                $esSimilar = $this->compareVisualSimilarity($binHik, $binLocal);
+
+                return [
+                    'identicas' => $esSimilar['match'],
+                    'mensaje'   => $esSimilar['match'] ? 'Es la misma persona (Visualmente)' : 'Las fotos son de personas diferentes',
+                    'similitud' => $esSimilar['score'] . '%',
+                    'debug'     => [
+                        'longitud_hik'   => strlen($binHik),
+                        'longitud_local' => strlen($binLocal)
+                    ]
+                ];
+            });
+
+            if (!$resultado) {
+                return response()->json(['identicas' => false, 'error' => 'Error al procesar comparación'], 500);
+            }
+
+            if (isset($resultado['error'])) {
+                return response()->json(['identicas' => false, 'error' => $resultado['error']], 404);
+            }
+
+            return response()->json($resultado);
+        } catch (\Exception $e) {
+            return response()->json(['identicas' => false, 'error' => $e->getMessage()], 500);
+        }
+    }
     public function compararFotosHCKWithDBEstudiante($ci)
     {
         try {
@@ -2153,7 +2325,7 @@ class HikcentralController extends Controller
         $request->validate([
             'personCode' => 'required|string',
             'startTime'  => 'nullable|string', // Formato esperado: Y-m-d (Ej: 2026-06-05)
-            'endTime'    => 'nullable|string', 
+            'endTime'    => 'nullable|string',
         ]);
 
         $personCode = $request->input('personCode');
@@ -2205,10 +2377,56 @@ class HikcentralController extends Controller
                 "endTime"           => $endTime,
                 //"eventType"      => 198914,       
                 "personName"     => $personName,
-                "doorIndexCodes"    => ["14", "19", "23", "24", "25", "26",
-                "44","150","154","155","156","157","174","175","176","177","195","200","205","210",
-                "215","220","225","229","230","231","232","249","250","251","252","269","270","271",
-                "272","290","305","310","315","320","335","355","365","370","375","380","444","448"],
+                "doorIndexCodes"    => [
+                    "14",
+                    "19",
+                    "23",
+                    "24",
+                    "25",
+                    "26",
+                    "44",
+                    "150",
+                    "154",
+                    "155",
+                    "156",
+                    "157",
+                    "174",
+                    "175",
+                    "176",
+                    "177",
+                    "195",
+                    "200",
+                    "205",
+                    "210",
+                    "215",
+                    "220",
+                    "225",
+                    "229",
+                    "230",
+                    "231",
+                    "232",
+                    "249",
+                    "250",
+                    "251",
+                    "252",
+                    "269",
+                    "270",
+                    "271",
+                    "272",
+                    "290",
+                    "305",
+                    "310",
+                    "315",
+                    "320",
+                    "335",
+                    "355",
+                    "365",
+                    "370",
+                    "375",
+                    "380",
+                    "444",
+                    "448"
+                ],
                 "pageNo"            => 1,
                 "pageSize"          => 400,
                 "temperatureStatus" => -1,
@@ -2316,6 +2534,55 @@ class HikcentralController extends Controller
             return response()->json(['error' => $e->getMessage()], 500);
         }
     }
+    public function getDepartament()
+    {
+        try {
+            $url = env('HIKCENTRAL_GET_DEPARTAMENT');
+            $partnerKey = env('HIKCENTRAL_PARTNER_KEY');
+
+            $body = [
+                'pageNo' => 1,
+                'pageSize' => 400,
+            ];
+
+            $response = Http::withoutVerifying()->withHeaders([
+                'x-ca-key' => $partnerKey,
+                'x-ca-signature' => $this->generateSignature($url),
+                'x-ca-signature-headers' => 'x-ca-key',
+                'Accept' => '*/*',
+                'Content-Type' => 'application/json'
+            ])->post($url, $body);
+
+            return $response->json();
+        } catch (\Exception $e) {
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
+    }
+    public function GetIDDepartament(Request $request)
+    {
+        try {
+            $url = env('HIKCENTRAL_GETID_DEPARTAMENT');
+            $partnerKey = env('HIKCENTRAL_PARTNER_KEY');
+
+            // Recibe el número de página enviado desde el Frontend (por defecto 1)
+            $orgIndexCode = $request->input('orgIndexCode');
+            // Estructura corregida para HikCentral
+            $body = [
+                'orgIndexCode' => $orgIndexCode,
+            ];
+
+            $response = Http::withoutVerifying()->withHeaders([
+                'x-ca-key' => $partnerKey,
+                'x-ca-signature' => $this->generateSignature($url),
+                'x-ca-signature-headers' => 'x-ca-key',
+                'Accept' => '*/*',
+                'Content-Type' => 'application/json'
+            ])->post($url, $body);
+            return $response->json();
+        } catch (\Exception $e) {
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
+    }
     public function getAccesInfo(Request $request)
     {
         try {
@@ -2408,6 +2675,119 @@ class HikcentralController extends Controller
             return response()->json(['error' => $e->getMessage()], 500);
         }
     }
+    public function ADDAccesLevelPerson(Request $request)
+    {
+        try {
+            $url = env('HIKCENTRAL_ADD_ACCESS_LEVEL_PERSON');
+            $partnerKey = env('HIKCENTRAL_PARTNER_KEY');
+
+            // Recibe el número de página enviado desde el Frontend (por defecto 1)
+            $personID = $request->input('personID');
+            $privilegeGroupId = $request->input('privilegeGroupId');
+
+            // Validar que el personID se haya recibido correctamente
+            if (!$personID) {
+                return response()->json([
+                    'code' => "400",
+                    'msg'  => "El parámetro personID es obligatorio."
+                ], 400);
+            }
+
+            // Estructura corregida para HikCentral
+            $body = [
+                'privilegeGroupId' => $privilegeGroupId,
+                'type' => 1,
+                'list' => [
+                    [
+                        'id' => (string)$personID,
+                    ]
+                ]
+            ];
+
+            $response = Http::withoutVerifying()->withHeaders([
+                'x-ca-key' => $partnerKey,
+                'x-ca-signature' => $this->generateSignature($url),
+                'x-ca-signature-headers' => 'x-ca-key',
+                'Accept' => '*/*',
+                'Content-Type' => 'application/json'
+            ])->post($url, $body);
+            $resData = $response->json();
+
+
+            if ($response->successful() && isset($resData['code']) && $resData['code'] == 0) {
+
+                return response()->json([
+                    'code' => "0",
+                    'msg'  => "Success",
+                    'data' => $resData['data']
+                ], 200);
+            } else if ($resData['code'] == "128") {
+                return response()->json([
+                    'code'    =>  "128",
+                    'msg'     => "Error al asignar nivel de acceso en HikCentral.",
+                    'details' => $resData
+                ], 200);
+            } else {
+                return response()->json([
+                    'code'    => $resData['code'] ?? "500",
+                    'msg'     => $resData['msg'] ?? "Error al asignar nivel de acceso en HikCentral",
+                    'details' => $resData
+                ], 400);
+            }
+        } catch (\Exception $e) {
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
+    }
+    public function ADDDepartament(Request $request)
+    {
+        try {
+            $url = env('HIKCENTRAL_ADD_DEPARTAMENT');
+            $partnerKey = env('HIKCENTRAL_PARTNER_KEY');
+
+            // Recibe el número de página enviado desde el Frontend (por defecto 1)
+            $orgName = $request->input('orgName');
+            $parentIndexCode = $request->input('parentIndexCode');
+            // Estructura corregida para HikCentral
+            $body = [
+                'orgName' => $orgName,
+                'parentIndexCode' => $parentIndexCode,
+            ];
+
+            $response = Http::withoutVerifying()->withHeaders([
+                'x-ca-key' => $partnerKey,
+                'x-ca-signature' => $this->generateSignature($url),
+                'x-ca-signature-headers' => 'x-ca-key',
+                'Accept' => '*/*',
+                'Content-Type' => 'application/json'
+            ])->post($url, $body);
+            $resData = $response->json();
+
+
+            if ($response->successful() && isset($resData['code']) && $resData['code'] == 0) {
+
+                return response()->json([
+                    'code' => "0",
+                    'msg'  => "Success",
+                    'data' => $resData['data']
+                ], 200);
+            } else if ($resData['code'] == "128") {
+                return response()->json([
+                    'code'    =>  "128",
+                    'msg'     => "Error al crear departamento en HikCentral.",
+                    'details' => $resData
+                ], 200);
+            } else {
+                return response()->json([
+                    'code'    => $resData['code'] ?? "500",
+                    'msg'     => $resData['msg'] ?? "Error al crear departamento en HikCentral",
+                    'details' => $resData
+                ], 400);
+            }
+        } catch (\Exception $e) {
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
+    }
+   
     public function DELETEAccesLevelGymPerson(Request $request)
     {
         try {

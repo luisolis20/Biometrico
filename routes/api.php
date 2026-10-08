@@ -10,6 +10,7 @@ use App\Http\Controllers\CarreraController;
 use App\Http\Controllers\HikcentralController;
 use App\Http\Controllers\PeriodoLectivoController;
 use App\Http\Controllers\Asistencia_empleadoController;
+use App\Http\Controllers\InvitadoHikcentralController;
 
 
 
@@ -61,9 +62,11 @@ Route::prefix('biometrico')->group(function () {
     Route::get('getperson-est/{ci}', [HikcentralController::class, 'checkHikStatusEst'])->middleware('throttle:1000000,1');
     Route::get('getperson-pre-est/{ci}', [HikcentralController::class, 'checkHikStatusPreEst'])->middleware('throttle:1000000,1');
     Route::get('compare-hikdoc/{ci}', [HikcentralController::class, 'compararFotosHCKWithDBDOC'])->middleware('throttle:20000,1');
+    Route::get('compare-hikdoc-inv/{ci}', [HikcentralController::class, 'compararFotosHCKWithDBINV'])->middleware('throttle:20000,1');
     Route::get('compare-hikdoc-est/{ci}', [HikcentralController::class, 'compararFotosHCKWithDBEstudiante'])->middleware('throttle:20000,1');
     Route::get('compare-hikdoc-pre-est/{ci}', [HikcentralController::class, 'compareFotosHCKWithDBPreEstudiante'])->middleware('throttle:20000,1');
     Route::post('sync-hikcentral/{ci}', [HikcentralController::class, 'syncToHikCentral'])->middleware('throttle:20000,1');
+    Route::post('sync-invitado-hikcentral/{ci}', [HikcentralController::class, 'syncInvitadosToHikCentral'])->middleware('throttle:20000,1');
     Route::post('sync-hikcentral-pre-est/{ci}', [HikcentralController::class, 'syncToHikCentralPreEst'])->middleware('throttle:20000,1');
     Route::post('sync-hikdoc/{ci}', [HikcentralController::class, 'syncToHikCentralEst'])->middleware('throttle:20000,1');
     Route::post('sync-hikdoc-update/{ci}', [HikcentralController::class, 'syncToHikCentralUpdateEst'])->middleware('throttle:20000,1');
@@ -78,6 +81,22 @@ Route::prefix('biometrico')->group(function () {
     Route::get('/get-pending-sync-est', [HikcentralController::class, 'getPendingSyncEst'])->middleware('throttle:10000,1');
     Route::get('/get-pending-sync-pre-est', [HikcentralController::class, 'getPendingSyncPreEst'])->middleware('throttle:10000,1');
     Route::get('carrerasList', [CarreraController::class, 'carrerasconsula'])->middleware('throttle:10000,1');
+
+    //Invitado Hikcentral
+    Route::apiResource("hikcentral_invitados", InvitadoHikcentralController::class);
+    Route::post('subirevidencia', [InvitadoHikcentralController::class, 'uploadArchivo']);
+    Route::post('subirfoto', [InvitadoHikcentralController::class, 'uploadFoto']);
+    Route::delete('habilitar_invitado/{id}', [InvitadoHikcentralController::class, 'habilitar']);
+    Route::delete('inhabilitar_invitado/{id}', [InvitadoHikcentralController::class, 'inhabilitar']);
+
+    //Departamento
+    Route::get('getdepartamento', [HikcentralController::class, 'getDepartament']);
+    Route::post('adddepartamento', [HikcentralController::class, 'ADDDepartament']);
+    Route::get('getiddepartamento', [HikcentralController::class, 'GetIDDepartament']);
+
+    //Acceso
+    Route::post('addaccess', [HikcentralController::class, 'ADDAccesLevelPerson']);
+
     Route::middleware('auth:api')->group(function () {
         Route::get('me', [AuthController::class, 'me']);
         Route::post('refresh', [AuthController::class, 'refresh']);
