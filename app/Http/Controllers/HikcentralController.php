@@ -624,7 +624,7 @@ class HikcentralController extends Controller
                 try {
                     $user = Auth::user(); // Obtenemos el usuario autenticado
                     Bitacora::create([
-                        'bt_usuario' => $user->ciinfper,
+                        'bt_usuario' => $user->LoginUsu,
                         'bt_fechahora' => Carbon::now(),
                         'bt_accion' => 'SINCRONIZACIÓN HIKCENTRAL PERSONAL UTLVTE',
                         'bt_ippc' => $request->ip(),
@@ -732,7 +732,7 @@ class HikcentralController extends Controller
                 try {
                     $user = Auth::user(); // Obtenemos el usuario autenticado
                     Bitacora::create([
-                        'bt_usuario' => $user->ciinfper,
+                        'bt_usuario' => $user->LoginUsu,
                         'bt_fechahora' => Carbon::now(),
                         'bt_accion' => 'SINCRONIZACIÓN HIKCENTRAL INVITADO UTLVTE',
                         'bt_ippc' => $request->ip(),
@@ -1013,7 +1013,7 @@ class HikcentralController extends Controller
                 try {
                     $user = Auth::user(); // Obtenemos el usuario autenticado
                     Bitacora::create([
-                        'bt_usuario' => $user->ciinfper,
+                        'bt_usuario' => $user->LoginUsu,
                         'bt_fechahora' => Carbon::now(),
                         'bt_accion' => 'SINCRONIZACIÓN HIKCENTRAL ESTUDIANTE',
                         'bt_ippc' => $request->ip(),
@@ -1451,7 +1451,7 @@ class HikcentralController extends Controller
                 try {
                     $user = Auth::user(); // Obtenemos el usuario autenticado
                     Bitacora::create([
-                        'bt_usuario' => $user->ciinfper,
+                        'bt_usuario' => $user->LoginUsu,
                         'bt_fechahora' => Carbon::now(),
                         'bt_accion' => 'SINCRONIZACIÓN HIKCENTRAL ESTUDIANTE',
                         'bt_ippc' => $request->ip(),
@@ -1569,7 +1569,7 @@ class HikcentralController extends Controller
                 try {
                     $user = Auth::user(); // Obtenemos el usuario autenticado
                     Bitacora::create([
-                        'bt_usuario' => $user->ciinfper,
+                        'bt_usuario' => $user->LoginUsu,
                         'bt_fechahora' => Carbon::now(),
                         'bt_accion' => 'ACTUALIZACIÓN HIKCENTRAL ESTUDIANTE',
                         'bt_ippc' => $request->ip(),
@@ -1733,11 +1733,101 @@ class HikcentralController extends Controller
                 try {
                     $user = Auth::user(); // Obtenemos el usuario autenticado
                     Bitacora::create([
-                        'bt_usuario' => $user->ciinfper,
+                        'bt_usuario' => $user->LoginUsu,
                         'bt_fechahora' => Carbon::now(),
                         'bt_accion' => 'ACTUALIZACIÓN HIKCENTRAL PERSONAL UTLVTE',
                         'bt_ippc' => $request->ip(),
                         'bt_observacion' => "USUARIO: {$user->NombUsu} REALIZÓ: ACTUALIZACIÓN DE FOTO Y DATOS DE: {$docente->NombInfPer} {$docente->ApellInfPer} ({$docente->CIInfPer}) A HIKCENTRAL",
+                    ]);
+                } catch (\Exception $ex) {
+                    Log::error('Error bitácora en guardarCambios: ' . $ex->getMessage());
+                }
+                // Limpiar caché de foto vieja
+                Cache::forget("foto_docente_{$ci}");
+                Cache::forget("hik_status_{$ci}");
+                Cache::forget("hik_photo_base64_{$ci}");
+                Cache::forget("docente_individual_{$ci}");
+                Cache::forget("compare_result_{$ci}");
+
+                return response()->json([
+                    'code' => "0",
+                    'msg'  => "Success",
+                    'data' => $resData['data']
+                ], 200);
+            } else if ($resData['code'] == "128") {
+                return response()->json([
+                    'code'    =>  "128",
+                    'msg'     => "El archivo de la foto no es compatible con HikCentral.",
+                    'details' => $resData
+                ], 200);
+            } else {
+                return response()->json([
+                    'code'    => $resData['code'] ?? "500",
+                    'msg'     => $resData['msg'] ?? "Error al actualizar rostro en HikCentral",
+                    'details' => $resData
+                ], 400);
+            }
+        } catch (\Throwable $e) {
+            return response()->json(['error' => 'Error interno: ' . $e->getMessage()], 500);
+        }
+    }
+    public function syncToINvHikUpdateCentral(Request $request, $ci)
+    {
+        try {
+            $personaId = $request->input('personaId');
+            if (!$personaId) {
+                return response()->json(['code' => "400", 'msg' => 'El ID de HikCentral es requerido para actualizar.'], 400);
+            }
+            // 1. Obtener datos del docente desde el SIAD
+            $invitado = InvitadoHikcentral::where('cedula', $ci)->first();
+
+            if (!$invitado) {
+                return response()->json([
+                    'code' => "404",
+                    'msg'  => "El invitado con cédula {$ci} no fue encontrado en la base de datos."
+                ], 404);
+            }
+
+            // 2. Preparar la foto en Base64
+            $fotoBase64 = null;
+            if (!empty($invitado->foto)) {
+                $fotoPath = public_path("Documentos/Biometrico/Invitados/Fotos/{$ci}/{$invitado->foto}");
+
+                if (File::exists($fotoPath)) {
+                    $fotoContent = File::get($fotoPath);
+                    $fotoBase64  = base64_encode($fotoContent);
+                    //$faces[]     = ["faceData" => $fotoBase64];
+                } else {
+                    Log::warning("No se encontró la foto física para la CI {$ci} en la ruta: {$fotoPath}");
+                }
+            }
+
+            $body = [
+                "personId" => (string)$personaId,
+                "faceData" => $fotoBase64
+            ];
+
+            $partnerKey = env('HIKCENTRAL_PARTNER_KEY');
+            $urlInfo = env('HIKCENTRAL_UPDATE_PERSON');
+            $response = Http::withoutVerifying()->withHeaders([
+                'x-ca-key' => $partnerKey,
+                'x-ca-signature' => $this->generateSignature($urlInfo),
+                'x-ca-signature-headers' => 'x-ca-key',
+                'Accept' => '*/*',
+                'Content-Type' => 'application/json'
+            ])->post($urlInfo, $body);
+            $resData = $response->json();
+
+
+            if ($response->successful() && isset($resData['code']) && $resData['code'] == 0) {
+                try {
+                    $user = Auth::user(); // Obtenemos el usuario autenticado
+                    Bitacora::create([
+                        'bt_usuario' => $user->LoginUsu,
+                        'bt_fechahora' => Carbon::now(),
+                        'bt_accion' => 'ACTUALIZACIÓN HIKCENTRAL INVITADOS',
+                        'bt_ippc' => $request->ip(),
+                        'bt_observacion' => "USUARIO: {$user->NombUsu} REALIZÓ: ACTUALIZACIÓN DE FOTO Y DATOS DE: {$invitado->nombre} {$invitado->apellido} ({$invitado->cedula}) A HIKCENTRAL",
                     ]);
                 } catch (\Exception $ex) {
                     Log::error('Error bitácora en guardarCambios: ' . $ex->getMessage());
@@ -2101,19 +2191,35 @@ class HikcentralController extends Controller
             'score' => max(0, $score)
         ];
     }
-    public function clearDocenteCache($ci)
-    {
-        // Borramos la caché del estado y la caché del Base64
-        Cache::forget("hik_status_{$ci}");
-        Cache::forget("hik_status_est_{$ci}");
-        Cache::forget("hik_photo_base64_{$ci}");
 
-        return response()->json(['message' => 'Caché limpiada correctamente']);
-    }
-    public function getAllAcsDevices($pageNo = 1, $pageSize = 100)
+    public function getAllAcsDevices($pageNo = 1, $pageSize = 400)
     {
         try {
             $url = env('HIKCENTRAL_GET_ALL_DEVICES');
+            $partnerKey = env('HIKCENTRAL_PARTNER_KEY');
+
+            $body = [
+                'pageNo' => (int)$pageNo,
+                'pageSize' => (int)$pageSize
+            ];
+
+            $response = Http::withoutVerifying()->withHeaders([
+                'x-ca-key' => $partnerKey,
+                'x-ca-signature' => $this->generateSignature($url),
+                'x-ca-signature-headers' => 'x-ca-key',
+                'Accept' => '*/*',
+                'Content-Type' => 'application/json'
+            ])->post($url, $body);
+
+            return $response->json();
+        } catch (\Exception $e) {
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
+    }
+    public function getAllEncodeDevices($pageNo = 1, $pageSize = 400)
+    {
+        try {
+            $url = env('HIKCENTRAL_GET_ALL_CAMERA');
             $partnerKey = env('HIKCENTRAL_PARTNER_KEY');
 
             $body = [
@@ -2456,30 +2562,7 @@ class HikcentralController extends Controller
             ], 500);
         }
     }
-    public function getAllAsistence()
-    {
-        try {
-            $url = env('HIKCENTRAL_DEVICE_EVENTS');
-            $partnerKey = env('HIKCENTRAL_PARTNER_KEY');
-
-            $body = [
-                'pageNo' => 1,
-                'pageSize' => 100,
-            ];
-
-            $response = Http::withoutVerifying()->withHeaders([
-                'x-ca-key' => $partnerKey,
-                'x-ca-signature' => $this->generateSignature($url),
-                'x-ca-signature-headers' => 'x-ca-key',
-                'Accept' => '*/*',
-                'Content-Type' => 'application/json'
-            ])->post($url, $body);
-
-            return $response->json();
-        } catch (\Exception $e) {
-            return response()->json(['error' => $e->getMessage()], 500);
-        }
-    }
+    
     public function getAllAccessLevels()
     {
         try {
@@ -2787,7 +2870,7 @@ class HikcentralController extends Controller
             return response()->json(['error' => $e->getMessage()], 500);
         }
     }
-   
+
     public function DELETEAccesLevelGymPerson(Request $request)
     {
         try {
@@ -2847,5 +2930,211 @@ class HikcentralController extends Controller
         } catch (\Exception $e) {
             return response()->json(['error' => $e->getMessage()], 500);
         }
+    }
+    public function DELETEPersonHikcentral(Request $request)
+    {
+        try {
+            $url = env('HIKCENTRAL_DELETE_PERSON');
+            $partnerKey = env('HIKCENTRAL_PARTNER_KEY');
+
+            $personId = $request->input('personId');
+            $adminPassword = $request->input('adminPassword');
+            $personCode = $request->input('personCode');
+
+            // Validar que el personID se haya recibido correctamente
+            if (!$personId || !$adminPassword || !$personCode) {
+                return response()->json([
+                    'code' => "400",
+                    'msg'  => "El parámetro personID, adminPassword y personCode es obligatorio."
+                ], 400);
+            }
+
+            // Estructura corregida para HikCentral
+            $body = [
+                //'personId' => (string)$personId,
+                'adminPassword' => (string)$adminPassword,
+                'personCode' => (string)$personCode
+            ];
+
+            $response = Http::withoutVerifying()->withHeaders([
+                'x-ca-key' => $partnerKey,
+                'x-ca-signature' => $this->generateSignature($url),
+                'x-ca-signature-headers' => 'x-ca-key',
+                'Accept' => '*/*',
+                'Content-Type' => 'application/json'
+            ])->post($url, $body);
+
+            $resData = $response->json();
+
+            if ($response->successful() && isset($resData['code']) && $resData['code'] == 0) {
+                // VALIDACIÓN: Si existe remainLockNumber, la contraseña es incorrecta
+                if (isset($resData['data']['remainLockNumber'])) {
+                    return response()->json([
+                        'code' => "401",
+                        'msg'  => "Contraseña de administrador incorrecta. Intentos restantes: " . $resData['data']['remainLockNumber'],
+                        'data' => $resData['data']
+                    ], 401);
+                }
+                $this->clearDocenteCache($personCode);
+                // Si no retornó remainLockNumber, se eliminó correctamente
+                return response()->json([
+                    'code' => "0",
+                    'msg'  => "Success",
+                    'data' => $resData['data'] ?? null
+                ], 200);
+            } else if (isset($resData['code']) && $resData['code'] == "128") {
+                return response()->json([
+                    'code'    => "128",
+                    'msg'     => "Error al eliminar nivel de acceso en HikCentral.",
+                    'details' => $resData
+                ], 200);
+            } else {
+                return response()->json([
+                    'code'    => $resData['code'] ?? "500",
+                    'msg'     => $resData['msg'] ?? "Error al eliminar nivel de acceso en HikCentral",
+                    'details' => $resData
+                ], 400);
+            }
+        } catch (\Exception $e) {
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
+    }
+    public function estadisticasAccesosEstudiantes(Request $request)
+    {
+        $request->validate([
+            'startMonth' => 'required|integer|min:1|max:12',
+            'startYear'  => 'required|integer|min:2020',
+            'endMonth'   => 'required|integer|min:1|max:12',
+            'endYear'    => 'required|integer|min:2020',
+        ]);
+
+        $startMonth = str_pad($request->input('startMonth'), 2, '0', STR_PAD_LEFT);
+        $endMonth   = str_pad($request->input('endMonth'), 2, '0', STR_PAD_LEFT);
+        $startYear  = $request->input('startYear');
+        $endYear    = $request->input('endYear');
+
+        $timezoneOffset = '-05:00';
+        $startTime = Carbon::create($startYear, $startMonth, 1)->startOfMonth()->format('Y-m-d\TH:i:s') . $timezoneOffset;
+        $endTime   = Carbon::create($endYear, $endMonth, 1)->endOfMonth()->format('Y-m-d\TH:i:s') . $timezoneOffset;
+
+        $cacheKey = "stats_accesos_{$startYear}{$startMonth}_{$endYear}{$endMonth}";
+
+        // Sugiero aumentar un poco el caché (ej. 10 mins) si la consulta es de un mes entero
+        $estadisticas = Cache::remember($cacheKey, now()->addMinutes(1), function () use ($startTime, $endTime) {
+            
+            // 1. PRIMERO: Obtener Cédulas (Códigos) de estudiantes matriculados desde la DB Local
+            $estudiantesValidos = informacionpersonal::select('informacionpersonal.CIInfPer')
+                ->join('factura', 'factura.cedula', '=', 'informacionpersonal.CIInfPer')
+                ->join('detalle_matricula', 'factura.id', '=', 'detalle_matricula.idfactura')
+                ->join('carrera', 'carrera.idCarr', '=', 'detalle_matricula.idcarr')
+                ->where('factura.idper', function ($sub) {
+                    $sub->from('periodolectivo')
+                        ->select('idper')
+                        ->where('StatusPerLec', 1)
+                        ->limit(1);
+                })
+                ->whereIn('factura.tipo_documento', ['MATRICULA', 'MATRÍCULA'])
+                ->pluck('informacionpersonal.CIInfPer')
+                ->toArray();
+
+            // Si no hay estudiantes en la DB, no tiene sentido consultar a HikCentral
+            if (empty($estudiantesValidos)) {
+                return [];
+            }
+
+            $partnerKey = env('HIKCENTRAL_PARTNER_KEY');
+            $urlAttendance = env('HIKCENTRAL_GET_EVENTS');
+            
+            $pageNo = 1;
+            $todosLosEventos = collect();
+            $hasMore = true;
+
+            // 2. SEGUNDO: Consultar HikCentral iterando la paginación para no perder registros
+            while ($hasMore) {
+                $payload = [
+                    "startTime"      => $startTime,
+                    "endTime"        => $endTime,
+                    "doorIndexCodes" => [
+                        "14", "19", "23", "24", "25", "26", "44", "150", "154", "155", 
+                        "156", "157", "174", "175", "176", "177", "195", "200", "205", 
+                        "210", "215", "220", "225", "229", "230", "231", "232", "249", 
+                        "250", "251", "252", "269", "270", "271", "272", "290", "305", 
+                        "310", "315", "320", "335", "355", "365", "370", "375", "380", 
+                        "444", "448"
+                    ],
+                    "pageNo"         => $pageNo,
+                    "pageSize"       => 400, 
+                    "temperatureStatus" => -1,
+                    "maskStatus"        => -1,
+                    "sortField"         => "SwipeTime",
+                    "orderType"         => 0,
+                ];
+
+                $response = Http::withoutVerifying()->withHeaders([
+                    'x-ca-key'               => $partnerKey,
+                    'x-ca-signature'         => $this->generateSignature($urlAttendance),
+                    'x-ca-signature-headers' => 'x-ca-key',
+                    'Accept'                 => '*/*',
+                    'Content-Type'           => 'application/json'
+                ])->post($urlAttendance, $payload);
+
+                $eventosHik = $response->json();
+                $list = $eventosHik['data']['list'] ?? [];
+
+                if (!empty($list)) {
+                    // Filtramos INMEDIATAMENTE solo los que pertenezcan a nuestra lista de DB
+                    // Esto evita colapsar la RAM de Laravel al procesar meses enteros
+                    $eventosFiltrados = collect($list)->whereIn('personCode', $estudiantesValidos);
+                    $todosLosEventos = $todosLosEventos->merge($eventosFiltrados);
+                }
+
+                // Validar si necesitamos pedir la siguiente página
+                $totalRegistros = $eventosHik['data']['total'] ?? 0;
+                if (($pageNo * 1000) >= $totalRegistros || empty($list)) {
+                    $hasMore = false; // Ya no hay más páginas
+                } else {
+                    $pageNo++; // Consultar siguientes 1000
+                }
+            }
+
+            if ($todosLosEventos->isEmpty()) {
+                return [];
+            }
+
+            // 3. TERCERO: Agrupar la data por "Año-Mes" para el gráfico
+            $agrupadoPorMes = $todosLosEventos->groupBy(function ($item) {
+                return Carbon::parse($item['swipeTime'])->format('Y-m');
+            });
+
+            $chartData = [];
+            foreach ($agrupadoPorMes as $mes => $eventosMes) {
+                $chartData[] = [
+                    'mes' => $mes,
+                    'total_accesos' => $eventosMes->count(),
+                    'estudiantes_unicos' => $eventosMes->pluck('personCode')->unique()->count()
+                ];
+            }
+
+            usort($chartData, function ($a, $b) {
+                return strcmp($a['mes'], $b['mes']);
+            });
+
+            return $chartData;
+        });
+
+        return response()->json([
+            'success' => true,
+            'data' => $estadisticas
+        ]);
+    }
+    private function clearDocenteCache($ci)
+    {
+        // Borramos la caché del estado y la caché del Base64
+        Cache::forget("hik_status_{$ci}");
+        Cache::forget("hik_status_est_{$ci}");
+        Cache::forget("compare_result_{$ci}");
+        Cache::forget("hik_photo_base64_{$ci}");
+
+        return true;
     }
 }

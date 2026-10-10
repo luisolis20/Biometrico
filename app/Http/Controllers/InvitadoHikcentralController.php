@@ -154,7 +154,7 @@ class InvitadoHikcentralController extends Controller
     {
         // 1. Validaciones (Se excluye el ID actual de la validación unique de cédula)
         $validator = Validator::make($request->all(), [
-            'cedula'              => 'required|string|max:20|unique:invitados_hikcentral,cedula,' . $id,
+            'cedula'              => 'required|string|max:20|unique:hikcentral_invitados,cedula,' . $id,
             'nombres'             => 'required|string|max:100',
             'apellidos'           => 'required|string|max:100',
             'genero'              => 'required|integer|in:1,2',
