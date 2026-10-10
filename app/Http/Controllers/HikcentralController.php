@@ -2216,7 +2216,60 @@ class HikcentralController extends Controller
             return response()->json(['error' => $e->getMessage()], 500);
         }
     }
-    public function getAllEncodeDevices($pageNo = 1, $pageSize = 400)
+    public function getAllControlAccessDevices(Request $request)
+    {
+        try {
+            // Capturar pageNo y pageSize del request (pageSize limitado a máximo 500)
+            $pageNo   = (int) $request->input('pageNo', $request->input('page', 1));
+            $pageSize = min((int) $request->input('pageSize', 10), 500);
+
+            $url        = env('HIKCENTRAL_GET_ALL_DEVICES');
+            $partnerKey = env('HIKCENTRAL_PARTNER_KEY');
+
+            $body = [
+                'pageNo'   => $pageNo,
+                'pageSize' => $pageSize
+            ];
+
+            $response = Http::withoutVerifying()->withHeaders([
+                'x-ca-key'               => $partnerKey,
+                'x-ca-signature'         => $this->generateSignature($url),
+                'x-ca-signature-headers' => 'x-ca-key',
+                'Accept'                 => '*/*',
+                'Content-Type'           => 'application/json'
+            ])->post($url, $body);
+
+            $data = $response->json();
+
+            // Estructurar la respuesta con metadatos para la paginación del frontend
+            if (isset($data['code']) && $data['code'] === "0") {
+                $total = $data['data']['total'] ?? 0;
+                return response()->json([
+                    'success'    => true,
+                    'data'       => $data['data']['list'] ?? [],
+                    'pagination' => [
+                        'current_page' => $pageNo,
+                        'per_page'     => $pageSize,
+                        'total'        => $total,
+                        'last_page'    => (int) ceil($total / $pageSize)
+                    ]
+                ]);
+            }
+
+            return response()->json([
+                'success' => false,
+                'data'    => [],
+                'message' => $data['msg'] ?? 'Error al obtener dispositivos de control de acceso'
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'error'   => $e->getMessage()
+            ], 500);
+        }
+    }
+    public function getAllEncodeDevices($pageNo = 1, $pageSize = 500)
     {
         try {
             $url = env('HIKCENTRAL_GET_ALL_CAMERA');
@@ -2238,6 +2291,59 @@ class HikcentralController extends Controller
             return $response->json();
         } catch (\Exception $e) {
             return response()->json(['error' => $e->getMessage()], 500);
+        }
+    }
+    public function getAllCamarasDevices(Request $request)
+    {
+        try {
+            // Capturar pageNo y pageSize del request (pageSize limitado a máximo 500 según especificación HikCentral)
+            $pageNo   = (int) $request->input('pageNo',$request->input('page', 1));
+            $pageSize = min((int)$request->input('pageSize', 10), 500);
+
+            $url = env('HIKCENTRAL_GET_ALL_CAMERA');
+            $partnerKey = env('HIKCENTRAL_PARTNER_KEY');
+
+            $body = [
+                'pageNo'   => $pageNo,
+                'pageSize' => $pageSize
+            ];
+
+            $response = Http::withoutVerifying()->withHeaders([
+                'x-ca-key'               => $partnerKey,
+                'x-ca-signature'         => $this->generateSignature($url),
+                'x-ca-signature-headers' => 'x-ca-key',
+                'Accept'                 => '*/*',
+                'Content-Type'           => 'application/json'
+            ])->post($url,$body);
+
+            $data =$response->json();
+
+            // Estructurar la respuesta para facilitar la paginación en el frontend
+            if (isset($data['code']) &&$data['code'] === "0") {
+                $total =$data['data']['total'] ?? 0;
+                return response()->json([
+                    'success'    => true,
+                    'data'       => $data['data']['list'] ?? [],
+                    'pagination' => [
+                        'current_page' => $pageNo,
+                        'per_page'     => $pageSize,
+                        'total'        => $total,
+                        'last_page'    => (int) ceil($total / $pageSize)
+                    ]
+                ]);
+            }
+
+            return response()->json([
+                'success' => false,
+                'data'    => [],
+                'message' => $data['msg'] ?? 'Error al obtener cámaras'
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'error'   => $e->getMessage()
+            ], 500);
         }
     }
     public function getAttendanceReport(Request $request)
@@ -2562,7 +2668,7 @@ class HikcentralController extends Controller
             ], 500);
         }
     }
-    
+
     public function getAllAccessLevels()
     {
         try {
@@ -3001,73 +3107,48 @@ class HikcentralController extends Controller
     }
     public function estadisticasAccesosEstudiantes(Request $request)
     {
-        $request->validate([
-            'startMonth' => 'required|integer|min:1|max:12',
-            'startYear'  => 'required|integer|min:2020',
-            'endMonth'   => 'required|integer|min:1|max:12',
-            'endYear'    => 'required|integer|min:2020',
-        ]);
+        $beginTime = $request->input('beginTime');
+        $endTime   = $request->input('endTime');
 
-        $startMonth = str_pad($request->input('startMonth'), 2, '0', STR_PAD_LEFT);
-        $endMonth   = str_pad($request->input('endMonth'), 2, '0', STR_PAD_LEFT);
-        $startYear  = $request->input('startYear');
-        $endYear    = $request->input('endYear');
+        if (!$beginTime || !$endTime) {
+            return response()->json(['success' => false, 'message' => 'Fechas inválidas'], 400);
+        }
 
         $timezoneOffset = '-05:00';
-        $startTime = Carbon::create($startYear, $startMonth, 1)->startOfMonth()->format('Y-m-d\TH:i:s') . $timezoneOffset;
-        $endTime   = Carbon::create($endYear, $endMonth, 1)->endOfMonth()->format('Y-m-d\TH:i:s') . $timezoneOffset;
+        $startTime     = Carbon::parse($beginTime)->startOfDay()->format('Y-m-d\TH:i:s') . $timezoneOffset;
+        $endTimeParsed = Carbon::parse($endTime)->endOfDay()->format('Y-m-d\TH:i:s') . $timezoneOffset;
 
-        $cacheKey = "stats_accesos_{$startYear}{$startMonth}_{$endYear}{$endMonth}";
+        // Actualizamos la clave de caché para invalidar resultados de pruebas anteriores
+        $cacheKey = "stats_accesos_v5_" . md5($startTime . $endTimeParsed);
 
-        // Sugiero aumentar un poco el caché (ej. 10 mins) si la consulta es de un mes entero
-        $estadisticas = Cache::remember($cacheKey, now()->addMinutes(1), function () use ($startTime, $endTime) {
+        $estadisticas = Cache::remember($cacheKey, now()->addMinutes(5), function () use ($startTime, $endTimeParsed) {
             
-            // 1. PRIMERO: Obtener Cédulas (Códigos) de estudiantes matriculados desde la DB Local
-            $estudiantesValidos = informacionpersonal::select('informacionpersonal.CIInfPer')
-                ->join('factura', 'factura.cedula', '=', 'informacionpersonal.CIInfPer')
-                ->join('detalle_matricula', 'factura.id', '=', 'detalle_matricula.idfactura')
-                ->join('carrera', 'carrera.idCarr', '=', 'detalle_matricula.idcarr')
-                ->where('factura.idper', function ($sub) {
-                    $sub->from('periodolectivo')
-                        ->select('idper')
-                        ->where('StatusPerLec', 1)
-                        ->limit(1);
-                })
-                ->whereIn('factura.tipo_documento', ['MATRICULA', 'MATRÍCULA'])
-                ->pluck('informacionpersonal.CIInfPer')
-                ->toArray();
-
-            // Si no hay estudiantes en la DB, no tiene sentido consultar a HikCentral
-            if (empty($estudiantesValidos)) {
-                return [];
-            }
-
-            $partnerKey = env('HIKCENTRAL_PARTNER_KEY');
+            $partnerKey    = env('HIKCENTRAL_PARTNER_KEY');
             $urlAttendance = env('HIKCENTRAL_GET_EVENTS');
-            
-            $pageNo = 1;
-            $todosLosEventos = collect();
-            $hasMore = true;
 
-            // 2. SEGUNDO: Consultar HikCentral iterando la paginación para no perder registros
-            while ($hasMore) {
+            $pageNo     = 1;
+            $hasMore    = true;
+            $cardNosMap = [];
+            $maxPages   = 100; // 👈 Ampliado a 100 páginas (50,000 eventos) para rangos de 2 o más meses
+
+            // -------------------------------------------------------------
+            // PASO 1: Obtener todos los eventos tipo 198914 de HikCentral
+            // -------------------------------------------------------------
+            while ($hasMore && $pageNo <= $maxPages) {
                 $payload = [
                     "startTime"      => $startTime,
-                    "endTime"        => $endTime,
+                    "endTime"        => $endTimeParsed,
+                    "eventType"      => 198914,
                     "doorIndexCodes" => [
-                        "14", "19", "23", "24", "25", "26", "44", "150", "154", "155", 
-                        "156", "157", "174", "175", "176", "177", "195", "200", "205", 
-                        "210", "215", "220", "225", "229", "230", "231", "232", "249", 
-                        "250", "251", "252", "269", "270", "271", "272", "290", "305", 
-                        "310", "315", "320", "335", "355", "365", "370", "375", "380", 
-                        "444", "448"
+                        "14","19","23","24","25","26","44","150","154","155","156","157","174",
+                        "175","176","177","195","200","205","210","215","220","225","229","230",
+                        "231","232","249","250","251","252","269","270","271","272","290","305",
+                        "310","315","320","335","355","365","370","375","380","444","448"
                     ],
-                    "pageNo"         => $pageNo,
-                    "pageSize"       => 400, 
-                    "temperatureStatus" => -1,
-                    "maskStatus"        => -1,
-                    "sortField"         => "SwipeTime",
-                    "orderType"         => 0,
+                    "pageNo"    => $pageNo,
+                    "pageSize"  => 500,
+                    "sortField" => "SwipeTime",
+                    "orderType" => 0,
                 ];
 
                 $response = Http::withoutVerifying()->withHeaders([
@@ -3079,53 +3160,406 @@ class HikcentralController extends Controller
                 ])->post($urlAttendance, $payload);
 
                 $eventosHik = $response->json();
-                $list = $eventosHik['data']['list'] ?? [];
+                $list       = $eventosHik['data']['list'] ?? [];
 
-                if (!empty($list)) {
-                    // Filtramos INMEDIATAMENTE solo los que pertenezcan a nuestra lista de DB
-                    // Esto evita colapsar la RAM de Laravel al procesar meses enteros
-                    $eventosFiltrados = collect($list)->whereIn('personCode', $estudiantesValidos);
-                    $todosLosEventos = $todosLosEventos->merge($eventosFiltrados);
+                foreach ($list as $evento) {
+                    if (!empty($evento['cardNo'])) {
+                        $cardNo = trim($evento['cardNo']);
+                        $cardNosMap[$cardNo] = true;
+                        $cardNosMap[ltrim($cardNo, '0')] = true; // Sin ceros a la izquierda
+                    }
                 }
 
-                // Validar si necesitamos pedir la siguiente página
                 $totalRegistros = $eventosHik['data']['total'] ?? 0;
-                if (($pageNo * 1000) >= $totalRegistros || empty($list)) {
-                    $hasMore = false; // Ya no hay más páginas
+                if (($pageNo * 500) >= $totalRegistros || empty($list)) {
+                    $hasMore = false;
                 } else {
-                    $pageNo++; // Consultar siguientes 1000
+                    $pageNo++;
                 }
             }
 
-            if ($todosLosEventos->isEmpty()) {
-                return [];
+            $cedulasEventos = array_keys($cardNosMap);
+
+            // -------------------------------------------------------------
+            // PASO 2: Consulta en la Base de Datos Local
+            // -------------------------------------------------------------
+            $baseQuery = informacionpersonal::join('factura', 'factura.cedula', '=', 'informacionpersonal.CIInfPer')
+                ->join('detalle_matricula', 'factura.id', '=', 'detalle_matricula.idfactura')
+                ->join('carrera', 'carrera.idCarr', '=', 'detalle_matricula.idcarr')
+                ->where('factura.idper', function ($sub) {
+                    $sub->from('periodolectivo')->select('idper')->where('StatusPerLec', 1)->limit(1);
+                })
+                ->whereIn('factura.tipo_documento', ['MATRICULA', 'MATRÍCULA']);
+
+            $totalMatriculados = (clone $baseQuery)
+                ->distinct('informacionpersonal.CIInfPer')
+                ->count('informacionpersonal.CIInfPer');
+
+            if ($totalMatriculados === 0) {
+                $totalMatriculados = 1;
             }
 
-            // 3. TERCERO: Agrupar la data por "Año-Mes" para el gráfico
-            $agrupadoPorMes = $todosLosEventos->groupBy(function ($item) {
-                return Carbon::parse($item['swipeTime'])->format('Y-m');
-            });
-
-            $chartData = [];
-            foreach ($agrupadoPorMes as $mes => $eventosMes) {
-                $chartData[] = [
-                    'mes' => $mes,
-                    'total_accesos' => $eventosMes->count(),
-                    'estudiantes_unicos' => $eventosMes->pluck('personCode')->unique()->count()
-                ];
+            $conAcceso = 0;
+            if (!empty($cedulasEventos)) {
+                $conAcceso = (clone $baseQuery)
+                    ->whereIn('informacionpersonal.CIInfPer', $cedulasEventos)
+                    ->distinct('informacionpersonal.CIInfPer')
+                    ->count('informacionpersonal.CIInfPer');
             }
 
-            usort($chartData, function ($a, $b) {
-                return strcmp($a['mes'], $b['mes']);
-            });
+            $sinAcceso = max(0, $totalMatriculados - $conAcceso);
 
-            return $chartData;
+            return [
+                'total_matriculados' => $totalMatriculados,
+                'con_acceso'         => $conAcceso,
+                'sin_acceso'         => $sinAcceso,
+                'fechas_filtro'      => [
+                    'startTime_enviado' => $startTime,
+                    'endTime_enviado'   => $endTimeParsed
+                ]
+            ];
         });
 
         return response()->json([
             'success' => true,
-            'data' => $estadisticas
+            'data'    => $estadisticas
         ]);
+    }
+    public function getTablaEventosEstudiantes(Request $request)
+    {
+        $beginTime = $request->input('beginTime');
+        $endTime   = $request->input('endTime');
+        $page      = (int) $request->input('page', 1);
+        $perPage   = min((int) $request->input('perPage', 15), 50);
+
+        if (!$beginTime || !$endTime) {
+            return response()->json(['success' => false, 'message' => 'Fechas inválidas'], 400);
+        }
+
+        $timezoneOffset = '-05:00';
+        $startTime     = Carbon::parse($beginTime)->startOfDay()->format('Y-m-d\TH:i:s') . $timezoneOffset;
+        $endTimeParsed = Carbon::parse($endTime)->endOfDay()->format('Y-m-d\TH:i:s') . $timezoneOffset;
+
+        try {
+            $partnerKey    = env('HIKCENTRAL_PARTNER_KEY');
+            $urlAttendance = env('HIKCENTRAL_GET_EVENTS');
+
+            // 1. Obtener lista de estudiantes matriculados activos
+            $estudiantesMatriculados = informacionpersonal::select(
+                    'informacionpersonal.CIInfPer',
+                    'carrera.NombCarr',
+                    'detalle_matricula.nivel'
+                )
+                ->join('factura', 'factura.cedula', '=', 'informacionpersonal.CIInfPer')
+                ->join('detalle_matricula', 'factura.id', '=', 'detalle_matricula.idfactura')
+                ->join('carrera', 'carrera.idCarr', '=', 'detalle_matricula.idcarr')
+                ->where('factura.idper', function ($sub) {
+                    $sub->from('periodolectivo')->select('idper')->where('StatusPerLec', 1)->limit(1);
+                })
+                ->whereIn('factura.tipo_documento', ['MATRICULA', 'MATRÍCULA'])
+                ->get()
+                ->keyBy('CIInfPer');
+
+            // 2. Traer un bloque de eventos desde HikCentral (pageSize <= 500)
+            $payload = [
+                "startTime"      => $startTime,
+                "endTime"        => $endTimeParsed,
+                "eventType"      => 198914,
+                "doorIndexCodes" => [
+                    "14","19","23","24","25","26","44","150","154","155","156","157","174",
+                    "175","176","177","195","200","205","210","215","220","225","229","230",
+                    "231","232","249","250","251","252","269","270","271","272","290","305",
+                    "310","315","320","335","355","365","370","375","380","444","448"
+                ],
+                "pageNo"    => 1,
+                "pageSize"  => 500, // 👈 Ajustado al máximo permitido (1-500)
+                "sortField" => "SwipeTime",
+                "orderType" => 0,
+            ];
+
+            $response = Http::withoutVerifying()->withHeaders([
+                'x-ca-key'               => $partnerKey,
+                'x-ca-signature'         => $this->generateSignature($urlAttendance),
+                'x-ca-signature-headers' => 'x-ca-key',
+                'Accept'                 => '*/*',
+                'Content-Type'           => 'application/json'
+            ])->post($urlAttendance, $payload);
+
+            $eventosHik = $response->json();
+            $list       = $eventosHik['data']['list'] ?? [];
+
+            // 3. Filtrar los eventos dejando SOLO los de estudiantes matriculados
+            $eventosValidos = collect();
+
+            foreach ($list as $evt) {
+                $cardNo = trim($evt['cardNo'] ?? '');
+                $cardNoSinCero = ltrim($cardNo, '0');
+
+                $estudiante = $estudiantesMatriculados->get($cardNo) 
+                        ?? $estudiantesMatriculados->get($cardNoSinCero);
+
+                if ($estudiante) {
+                    $eventosValidos->push([
+                        'eventId'           => $evt['eventId'] ?? '',
+                        'personName'        => $evt['personName'] ?? 'Sin Nombre',
+                        'cardNo'            => $cardNo,
+                        'doorName'          => $evt['doorName'] ?? 'Puerta Desconocida',
+                        'eventTime'         => $evt['eventTime'] ?? $evt['deviceTime'] ?? '',
+                        'carrera'           => $estudiante->NombCarr,
+                        'nivel'             => $estudiante->nivel,
+                        'wearMaskStatus'    => $evt['wearMaskStatus'] ?? 0,
+                        'checkInAndOutType' => $evt['checkInAndOutType'] ?? 0
+                    ]);
+                }
+            }
+
+            // 4. Paginación manual para el Frontend
+            $totalItems  = $eventosValidos->count();
+            $itemsOffset = ($page - 1) * $perPage;
+            $itemsPaginated = $eventosValidos->slice($itemsOffset, $perPage)->values();
+
+            return response()->json([
+                'success' => true,
+                'data'    => $itemsPaginated,
+                'pagination' => [
+                    'current_page' => $page,
+                    'per_page'     => $perPage,
+                    'total'        => $totalItems,
+                    'last_page'    => (int) ceil($totalItems / $perPage)
+                ]
+            ]);
+
+        } catch (\Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error consultando eventos: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+    public function estadisticasAccesosPersonal(Request $request)
+    {
+        $beginTime = $request->input('beginTime');
+        $endTime   = $request->input('endTime');
+
+        if (!$beginTime || !$endTime) {
+            return response()->json(['success' => false, 'message' => 'Fechas inválidas'], 400);
+        }
+
+        $timezoneOffset = '-05:00';
+        $startTime     = Carbon::parse($beginTime)->startOfDay()->format('Y-m-d\TH:i:s') . $timezoneOffset;
+        $endTimeParsed = Carbon::parse($endTime)->endOfDay()->format('Y-m-d\TH:i:s') . $timezoneOffset;
+
+        $cacheKey = "stats_accesos_personal_v1_" . md5($startTime . $endTimeParsed);
+
+        $estadisticas = Cache::remember($cacheKey, now()->addMinutes(5), function () use ($startTime, $endTimeParsed) {
+            
+            $partnerKey    = env('HIKCENTRAL_PARTNER_KEY');
+            $urlAttendance = env('HIKCENTRAL_GET_EVENTS');
+
+            $pageNo     = 1;
+            $hasMore    = true;
+            $cardNosMap = [];
+            $maxPages   = 100; // Paginación de eventos
+
+            // -------------------------------------------------------------
+            // PASO 1: Obtener eventos de HikCentral (pageSize = 500 max)
+            // -------------------------------------------------------------
+            while ($hasMore && $pageNo <= $maxPages) {
+                $payload = [
+                    "startTime"      => $startTime,
+                    "endTime"        => $endTimeParsed,
+                    "eventType"      => 198914,
+                    "doorIndexCodes" => [
+                        "14","19","23","24","25","26","44","150","154","155","156","157","174",
+                        "175","176","177","195","200","205","210","215","220","225","229","230",
+                        "231","232","249","250","251","252","269","270","271","272","290","305",
+                        "310","315","320","335","355","365","370","375","380","444","448"
+                    ],
+                    "pageNo"    => $pageNo,
+                    "pageSize"  => 500,
+                    "sortField" => "SwipeTime",
+                    "orderType" => 0,
+                ];
+
+                $response = Http::withoutVerifying()->withHeaders([
+                    'x-ca-key'               => $partnerKey,
+                    'x-ca-signature'         => $this->generateSignature($urlAttendance),
+                    'x-ca-signature-headers' => 'x-ca-key',
+                    'Accept'                 => '*/*',
+                    'Content-Type'           => 'application/json'
+                ])->post($urlAttendance, $payload);
+
+                $eventosHik = $response->json();
+                $list       = $eventosHik['data']['list'] ?? [];
+
+                foreach ($list as $evento) {
+                    if (!empty($evento['cardNo'])) {
+                        $cardNo = trim($evento['cardNo']);
+                        $cardNosMap[$cardNo] = true;
+                        $cardNosMap[ltrim($cardNo, '0')] = true; // Sin ceros a la izquierda
+                    }
+                }
+
+                $totalRegistros = $eventosHik['data']['total'] ?? 0;
+                if (($pageNo * 500) >= $totalRegistros || empty($list)) {
+                    $hasMore = false;
+                } else {
+                    $pageNo++;
+                }
+            }
+
+            $cedulasEventos = array_keys($cardNosMap);
+
+            // -------------------------------------------------------------
+            // PASO 2: Consulta en la Base de Datos Local (informacionpersonal_D)
+            // -------------------------------------------------------------
+            $baseQuery = informacionpersonal_D::where('StatusPer', 1);
+
+            $totalPersonal = (clone $baseQuery)
+                ->distinct('CIInfPer')
+                ->count('CIInfPer');
+
+            if ($totalPersonal === 0) {
+                $totalPersonal = 1;
+            }
+
+            $conAcceso = 0;
+            if (!empty($cedulasEventos)) {
+                $conAcceso = (clone $baseQuery)
+                    ->whereIn('CIInfPer', $cedulasEventos)
+                    ->distinct('CIInfPer')
+                    ->count('CIInfPer');
+            }
+
+            $sinAcceso = max(0, $totalPersonal - $conAcceso);
+
+            return [
+                'total_personal' => $totalPersonal,
+                'con_acceso'     => $conAcceso,
+                'sin_acceso'     => $sinAcceso,
+                'fechas_filtro'  => [
+                    'startTime_enviado' => $startTime,
+                    'endTime_enviado'   => $endTimeParsed
+                ]
+            ];
+        });
+
+        return response()->json([
+            'success' => true,
+            'data'    => $estadisticas
+        ]);
+    }
+    public function getTablaEventosPersonal(Request $request)
+    {
+        $beginTime = $request->input('beginTime');
+        $endTime   = $request->input('endTime');
+        $page      = (int) $request->input('page', 1);
+        $perPage   = min((int) $request->input('perPage', 15), 50);
+
+        if (!$beginTime || !$endTime) {
+            return response()->json(['success' => false, 'message' => 'Fechas inválidas'], 400);
+        }
+
+        $timezoneOffset = '-05:00';
+        $startTime     = Carbon::parse($beginTime)->startOfDay()->format('Y-m-d\TH:i:s') . $timezoneOffset;
+        $endTimeParsed = Carbon::parse($endTime)->endOfDay()->format('Y-m-d\TH:i:s') . $timezoneOffset;
+
+        try {
+            $partnerKey    = env('HIKCENTRAL_PARTNER_KEY');
+            $urlAttendance = env('HIKCENTRAL_GET_EVENTS');
+
+            // 1. Obtener lista de personal activo en DB local
+            $personalActivo = informacionpersonal_D::select('CIInfPer', 'NombInfPer', 'ApellInfPer','TipoInfPer')
+                ->where('StatusPer', 1)
+                ->get()
+                ->keyBy('CIInfPer');
+
+            // 2. Traer un bloque de eventos desde HikCentral
+            $payload = [
+                "startTime"      => $startTime,
+                "endTime"        => $endTimeParsed,
+                "eventType"      => 198914,
+                "doorIndexCodes" => [
+                    "14","19","23","24","25","26","44","150","154","155","156","157","174",
+                    "175","176","177","195","200","205","210","215","220","225","229","230",
+                    "231","232","249","250","251","252","269","270","271","272","290","305",
+                    "310","315","320","335","355","365","370","375","380","444","448"
+                ],
+                "pageNo"    => 1,
+                "pageSize"  => 500,
+                "sortField" => "SwipeTime",
+                "orderType" => 0,
+            ];
+
+            $response = Http::withoutVerifying()->withHeaders([
+                'x-ca-key'               => $partnerKey,
+                'x-ca-signature'         => $this->generateSignature($urlAttendance),
+                'x-ca-signature-headers' => 'x-ca-key',
+                'Accept'                 => '*/*',
+                'Content-Type'           => 'application/json'
+            ])->post($urlAttendance, $payload);
+
+            $eventosHik = $response->json();
+            $list       = $eventosHik['data']['list'] ?? [];
+
+            // 3. Filtrar los eventos dejando SOLO los del personal activo
+            $eventosValidos = collect();
+
+            foreach ($list as $evt) {
+                $cardNo = trim($evt['cardNo'] ?? '');
+                $cardNoSinCero = ltrim($cardNo, '0');
+
+                $empleado = $personalActivo->get($cardNo) 
+                        ?? $personalActivo->get($cardNoSinCero);
+
+                if ($empleado) {
+                    $nombreCompleto = trim("{$empleado->NombInfPer} {$empleado->ApellInfPer}");
+                    $tipoempleado = null;
+                    if($empleado->TipoInfPer === "D") {
+                        $tipoempleado = "Docente";
+                    } elseif ($empleado->TipoInfPer === "A") {
+                        $tipoempleado = "Administrativo";
+                    } elseif ($empleado->TipoInfPer === "T") {
+                        $tipoempleado = "Trabajador";
+                    }elseif ($empleado->TipoInfPer === "TDO") {
+                        $tipoempleado = "Técnico Docente";
+                    }
+                    
+                    $eventosValidos->push([
+                        'eventId'           => $evt['eventId'] ?? '',
+                        'personName'        => !empty($nombreCompleto) ? $nombreCompleto : ($evt['personName'] ?? 'Sin Nombre'),
+                        'cardNo'            => $cardNo,
+                        'doorName'          => $evt['doorName'] ?? 'Puerta Desconocida',
+                        'eventTime'         => $evt['eventTime'] ?? $evt['deviceTime'] ?? '',
+                        'wearMaskStatus'    => $evt['wearMaskStatus'] ?? 0,
+                        'checkInAndOutType' => $evt['checkInAndOutType'] ?? 0,
+                        'tipoEmpleado'      => $tipoempleado
+                    ]);
+                }
+            }
+
+            // 4. Paginación manual para el Frontend
+            $totalItems     = $eventosValidos->count();
+            $itemsOffset    = ($page - 1) * $perPage;
+            $itemsPaginated = $eventosValidos->slice($itemsOffset, $perPage)->values();
+
+            return response()->json([
+                'success' => true,
+                'data'    => $itemsPaginated,
+                'pagination' => [
+                    'current_page' => $page,
+                    'per_page'     => $perPage,
+                    'total'        => $totalItems,
+                    'last_page'    => (int) ceil($totalItems / $perPage)
+                ]
+            ]);
+
+        } catch (\Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error consultando eventos de personal: ' . $e->getMessage()
+            ], 500);
+        }
     }
     private function clearDocenteCache($ci)
     {

@@ -45,6 +45,7 @@ Route::prefix('biometrico')->group(function () {
     Route::get('get-periodos-rec', [PeriodoLectivoController::class, 'getActivos'])->middleware('throttle:10000,1');
     Route::get('devices', [HikcentralController::class, 'getAllAcsDevices'])->middleware('throttle:10000,1');
     Route::get('cameras', [HikcentralController::class, 'getAllEncodeDevices'])->middleware('throttle:10000,1');
+    Route::get('cameras-all', [HikcentralController::class, 'getAllCamarasDevices'])->middleware('throttle:10000,1');
     Route::get('search-devices/search', [HikcentralController::class, 'searchAcsDevice'])->middleware('throttle:10000,1');
     Route::get('real-time-events', [HikcentralController::class, 'getRealTimeEvents'])->middleware('throttle:10000,1');
     Route::get('asistencia', [HikcentralController::class, 'getAllAsistence'])->middleware('throttle:10000,1');
@@ -57,7 +58,9 @@ Route::prefix('biometrico')->group(function () {
     Route::post('eventos-puerta-asistencia', [HikcentralController::class, 'getAttendanceDoorEventsReport'])->middleware('throttle:10000,1');
     Route::post('eventos-puerta-asistencia-v2', [HikcentralController::class, 'getAttendanceDoorV2EventsReport'])->middleware('throttle:10000,1');
     Route::post('eventos-estadisticas-estudiantes', [HikcentralController::class, 'estadisticasAccesosEstudiantes']);
-
+    Route::post('eventos-tabla-estudiantes', [HikcentralController::class, 'getTablaEventosEstudiantes']);
+    Route::post('eventos-estadisticas-personal', [HikcentralController::class, 'estadisticasAccesosPersonal']);
+    Route::post('eventos-tabla-personal', [HikcentralController::class, 'getTablaEventosPersonal']);
 
     Route::get('getperson/{ci}', [HikcentralController::class, 'checkHikStatus'])->middleware('throttle:1000000,1');
     Route::get('getperson-est/{ci}', [HikcentralController::class, 'checkHikStatusEst'])->middleware('throttle:1000000,1');
