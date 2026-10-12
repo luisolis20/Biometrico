@@ -1902,7 +1902,7 @@ class HikcentralController extends Controller
             $cacheKey = "compare_result_{$ci}";
 
             // 2. Cachear el resultado por 30 minutos
-            $resultado = Cache::remember($cacheKey, 1800, function () use ($ci) {
+            $resultado = Cache::remember($cacheKey, 120, function () use ($ci) {
 
                 // Reutilizamos el método que ya tiene su propia caché
                 $resHik = $this->getHikPhotoBase64($ci);
@@ -1963,7 +1963,7 @@ class HikcentralController extends Controller
             $cacheKey = "compare_result_{$ci}";
 
             // 2. Cachear el resultado por 30 minutos
-            $resultado = Cache::remember($cacheKey, 1800, function () use ($ci) {
+            $resultado = Cache::remember($cacheKey, 10, function () use ($ci) {
 
                 // Reutilizamos el método que obtiene la foto de HikCentral
                 $resHik = $this->getHikPhotoBase64($ci);

@@ -35,80 +35,17 @@ Route::prefix('biometrico')->group(function () {
     Route::get('fotografia-pre-est/{ci}', [InformacionPersonalController::class, 'getPreFotografia2'])->middleware('throttle:10000,1');
     Route::get('fotografiaHK/{ci}', [InformacionPersonalController::class, 'getFotografiaHC'])->middleware('throttle:10000,1');
     Route::get('fotografiadoc/{ci}', [InformacionPersonalDController::class, 'getFotografia'])->middleware('throttle:5000,1');
-    Route::get('getindivDoc/{ci}', [InformacionPersonalDController::class, 'getDocenteByCI'])->middleware('throttle:5000,1');
-    Route::get('getindivDocUTLVTE/{ci}', [InformacionPersonalDController::class, 'getPersonaUTLVTEByCI'])->middleware('throttle:5000,1');
-    Route::get('getindivEst/{ci}', [InformacionPersonalController::class, 'getEstudianteByCI'])->middleware('throttle:10000,1');
-    Route::get('getindivEst-pre-est/{ci}', [InformacionPersonalController::class, 'getEstudiantesPreCI'])->middleware('throttle:10000,1');
-    Route::get('gethick/{ci}', [HikcentralController::class, 'testPhotoBase64'])->middleware('throttle:10000,1');
-    Route::get('gethickVer', [HikcentralController::class, 'testPhotoVerfifBase64']);
-    Route::get('gethick-pre-est/{ci}', [HikcentralController::class, 'testPhotoPreEstBase64'])->middleware('throttle:10000,1');
-    Route::get('get-periodos-rec', [PeriodoLectivoController::class, 'getActivos'])->middleware('throttle:10000,1');
-    Route::get('devices', [HikcentralController::class, 'getAllAcsDevices'])->middleware('throttle:10000,1');
-    Route::get('cameras', [HikcentralController::class, 'getAllEncodeDevices'])->middleware('throttle:10000,1');
-    Route::get('cameras-all', [HikcentralController::class, 'getAllCamarasDevices'])->middleware('throttle:10000,1');
-    Route::get('search-devices/search', [HikcentralController::class, 'searchAcsDevice'])->middleware('throttle:10000,1');
-    Route::get('real-time-events', [HikcentralController::class, 'getRealTimeEvents'])->middleware('throttle:10000,1');
-    Route::get('asistencia', [HikcentralController::class, 'getAllAsistence'])->middleware('throttle:10000,1');
-    Route::post('attendance-report', [HikcentralController::class, 'getAttendanceReport'])->middleware('throttle:10000,1');
-    Route::post('attendance-sync', [Asistencia_empleadoController::class, 'syncAttendance'])->middleware('throttle:10000,1');
-    Route::post('check-local-attendance', [Asistencia_empleadoController::class, 'checkLocal'])->middleware('throttle:10000,1');
-    Route::get('get-access-levels', [HikcentralController::class, 'getAllAccessLevels'])->middleware('throttle:10000,1');
-    Route::get('get-access-person', [HikcentralController::class, 'getAccesLevelGymPerson'])->middleware('throttle:10000,1');
-    Route::get('get-information-door', [HikcentralController::class, 'getAccesInfo'])->middleware('throttle:10000,1');
-    Route::post('eventos-puerta-asistencia', [HikcentralController::class, 'getAttendanceDoorEventsReport'])->middleware('throttle:10000,1');
-    Route::post('eventos-puerta-asistencia-v2', [HikcentralController::class, 'getAttendanceDoorV2EventsReport'])->middleware('throttle:10000,1');
-    Route::post('eventos-estadisticas-estudiantes', [HikcentralController::class, 'estadisticasAccesosEstudiantes']);
-    Route::post('eventos-tabla-estudiantes', [HikcentralController::class, 'getTablaEventosEstudiantes']);
-    Route::post('eventos-estadisticas-personal', [HikcentralController::class, 'estadisticasAccesosPersonal']);
-    Route::post('eventos-tabla-personal', [HikcentralController::class, 'getTablaEventosPersonal']);
-    Route::post('estadisticas-accesos-gym', [HikcentralController::class, 'estadisticasAccesosGym']);
-
-    Route::get('getperson/{ci}', [HikcentralController::class, 'checkHikStatus'])->middleware('throttle:1000000,1');
+    //API de Uso Externo
     Route::get('getperson-est/{ci}', [HikcentralController::class, 'checkHikStatusEst'])->middleware('throttle:1000000,1');
-    Route::get('getperson-pre-est/{ci}', [HikcentralController::class, 'checkHikStatusPreEst'])->middleware('throttle:1000000,1');
-    Route::get('compare-hikdoc/{ci}', [HikcentralController::class, 'compararFotosHCKWithDBDOC'])->middleware('throttle:20000,1');
-    Route::get('compare-hikdoc-inv/{ci}', [HikcentralController::class, 'compararFotosHCKWithDBINV'])->middleware('throttle:20000,1');
-    Route::get('compare-hikdoc-est/{ci}', [HikcentralController::class, 'compararFotosHCKWithDBEstudiante'])->middleware('throttle:20000,1');
-    Route::get('compare-hikdoc-pre-est/{ci}', [HikcentralController::class, 'compareFotosHCKWithDBPreEstudiante'])->middleware('throttle:20000,1');
-    Route::post('sync-hikcentral/{ci}', [HikcentralController::class, 'syncToHikCentral'])->middleware('throttle:20000,1');
-    Route::post('sync-invitado-hikcentral/{ci}', [HikcentralController::class, 'syncInvitadosToHikCentral'])->middleware('throttle:20000,1');
-    Route::post('sync-hikcentral-pre-est/{ci}', [HikcentralController::class, 'syncToHikCentralPreEst'])->middleware('throttle:20000,1');
-    Route::post('sync-hikdoc/{ci}', [HikcentralController::class, 'syncToHikCentralEst'])->middleware('throttle:20000,1');
-    Route::post('sync-hikdoc-update/{ci}', [HikcentralController::class, 'syncToHikCentralUpdateEst'])->middleware('throttle:20000,1');
-    Route::post('sync-hikdoc-update-pre-est/{ci}', [HikcentralController::class, 'syncToHikCentralUpdatePreEst'])->middleware('throttle:20000,1');
-    Route::post('sync-hikdupdatedoce/{ci}', [HikcentralController::class, 'syncToHikUpdateCentral'])->middleware('throttle:20000,1'); // Estudiantes individuales
-    Route::post('sync-hikdoc-est-id/{ci}', [HikcentralController::class, 'syncToHikCentralIndvEst'])->middleware('throttle:20000,1');
-    Route::post('sync-update-invitado-hikdoc/{ci}', [HikcentralController::class, 'syncToINvHikUpdateCentral'])->middleware('throttle:20000,1'); // Invitados individuales
     Route::post('add_level_access_gym', [HikcentralController::class, 'ADDAccesLevelGymPerson'])->middleware('throttle:20000,1');
     Route::post('remove_level_access_gym', [HikcentralController::class, 'DELETEAccesLevelGymPerson'])->middleware('throttle:20000,1');
-    Route::post('sync-hikdoc-est-id-pre-est/{ci}', [HikcentralController::class, 'syncToHikCentralIndPreEst'])->middleware('throttle:20000,1');
-    Route::get('clear-cache/{ci}', [HikcentralController::class, 'clearDocenteCache'])->middleware('throttle:10000,1');
-    Route::get('/get-pending-sync', [HikcentralController::class, 'getPendingSync'])->middleware('throttle:10000,1');
-    Route::get('/get-pending-sync-est', [HikcentralController::class, 'getPendingSyncEst'])->middleware('throttle:10000,1');
-    Route::get('/get-pending-sync-pre-est', [HikcentralController::class, 'getPendingSyncPreEst'])->middleware('throttle:10000,1');
-    Route::get('carrerasList', [CarreraController::class, 'carrerasconsula'])->middleware('throttle:10000,1');
-
-    //Invitado Hikcentral
-    Route::apiResource("hikcentral_invitados", InvitadoHikcentralController::class);
-    Route::post('subirevidencia', [InvitadoHikcentralController::class, 'uploadArchivo']);
-    Route::post('subirfoto', [InvitadoHikcentralController::class, 'uploadFoto']);
-    Route::delete('habilitar_invitado/{id}', [InvitadoHikcentralController::class, 'habilitar']);
-    Route::delete('inhabilitar_invitado/{id}', [InvitadoHikcentralController::class, 'destroy']);
-
-    //Departamento
-    Route::get('getdepartamento', [HikcentralController::class, 'getDepartament']);
-    Route::post('adddepartamento', [HikcentralController::class, 'ADDDepartament']);
-    Route::get('getiddepartamento', [HikcentralController::class, 'GetIDDepartament']);
-
-    //Acceso
-    Route::post('addaccess', [HikcentralController::class, 'ADDAccesLevelPerson']);
-    //Eliminar persona
-    Route::post('delete-person', [HikcentralController::class, 'DELETEPersonHikcentral']);
-
+    Route::post('eventos-puerta-asistencia', [HikcentralController::class, 'getAttendanceDoorEventsReport'])->middleware('throttle:10000,1');
+    
     Route::middleware('auth:api')->group(function () {
         Route::get('me', [AuthController::class, 'me']);
         Route::post('refresh', [AuthController::class, 'refresh']);
         Route::get('logout', [AuthController::class, 'logout'])->name('logout');
+        //API SIAD
         Route::get('getdocentes', [InformacionPersonalDController::class, 'getdocentes'])->middleware('throttle:10000,1');
         Route::get('getpersonal-utlvte', [InformacionPersonalDController::class, 'getPersonalUTLVTE'])->middleware('throttle:10000,1');
         Route::get('estudiantesfoto', [InformacionPersonalController::class, 'estudiantesfoto'])->middleware('throttle:10000,1');
@@ -116,5 +53,73 @@ Route::prefix('biometrico')->group(function () {
         Route::get('estudiantes-foto-lista', [InformacionPersonalController::class, 'listarEstudiantesConFoto']);
         Route::get('descargarfotosmasiva', [InformacionPersonalController::class, 'descargarFotosMasiva'])->middleware('throttle:10000,1');
         Route::get('descargarfotosmasivadoc', [InformacionPersonalDController::class, 'descargarFotosMasiva'])->middleware('throttle:5000,1');
+        Route::get('getindivDoc/{ci}', [InformacionPersonalDController::class, 'getDocenteByCI'])->middleware('throttle:5000,1');
+        Route::get('getindivDocUTLVTE/{ci}', [InformacionPersonalDController::class, 'getPersonaUTLVTEByCI'])->middleware('throttle:5000,1');
+        Route::get('getindivEst/{ci}', [InformacionPersonalController::class, 'getEstudianteByCI'])->middleware('throttle:10000,1');
+        Route::get('getindivEst-pre-est/{ci}', [InformacionPersonalController::class, 'getEstudiantesPreCI'])->middleware('throttle:10000,1');
+
+        //API HIKCENTRAL
+        Route::get('gethick/{ci}', [HikcentralController::class, 'testPhotoBase64'])->middleware('throttle:10000,1');
+        Route::get('gethickVer', [HikcentralController::class, 'testPhotoVerfifBase64']);
+        Route::get('gethick-pre-est/{ci}', [HikcentralController::class, 'testPhotoPreEstBase64'])->middleware('throttle:10000,1');
+        Route::get('get-periodos-rec', [PeriodoLectivoController::class, 'getActivos'])->middleware('throttle:10000,1');
+        Route::get('devices', [HikcentralController::class, 'getAllAcsDevices'])->middleware('throttle:10000,1');
+        Route::get('cameras', [HikcentralController::class, 'getAllEncodeDevices'])->middleware('throttle:10000,1');
+        Route::get('cameras-all', [HikcentralController::class, 'getAllCamarasDevices'])->middleware('throttle:10000,1');
+        Route::get('search-devices/search', [HikcentralController::class, 'searchAcsDevice'])->middleware('throttle:10000,1');
+        Route::get('real-time-events', [HikcentralController::class, 'getRealTimeEvents'])->middleware('throttle:10000,1');
+        Route::get('asistencia', [HikcentralController::class, 'getAllAsistence'])->middleware('throttle:10000,1');
+        Route::post('attendance-report', [HikcentralController::class, 'getAttendanceReport'])->middleware('throttle:10000,1');
+        Route::post('attendance-sync', [Asistencia_empleadoController::class, 'syncAttendance'])->middleware('throttle:10000,1');
+        Route::post('check-local-attendance', [Asistencia_empleadoController::class, 'checkLocal'])->middleware('throttle:10000,1');
+        Route::get('get-access-levels', [HikcentralController::class, 'getAllAccessLevels'])->middleware('throttle:10000,1');
+        Route::get('get-access-person', [HikcentralController::class, 'getAccesLevelGymPerson'])->middleware('throttle:10000,1');
+        Route::get('get-information-door', [HikcentralController::class, 'getAccesInfo'])->middleware('throttle:10000,1');
+        Route::post('eventos-puerta-asistencia-v2', [HikcentralController::class, 'getAttendanceDoorV2EventsReport'])->middleware('throttle:10000,1');
+        Route::post('eventos-estadisticas-estudiantes', [HikcentralController::class, 'estadisticasAccesosEstudiantes']);
+        Route::post('eventos-tabla-estudiantes', [HikcentralController::class, 'getTablaEventosEstudiantes']);
+        Route::post('eventos-estadisticas-personal', [HikcentralController::class, 'estadisticasAccesosPersonal']);
+        Route::post('eventos-tabla-personal', [HikcentralController::class, 'getTablaEventosPersonal']);
+        Route::post('estadisticas-accesos-gym', [HikcentralController::class, 'estadisticasAccesosGym']);
+
+        Route::get('getperson/{ci}', [HikcentralController::class, 'checkHikStatus'])->middleware('throttle:1000000,1');
+
+        Route::get('getperson-pre-est/{ci}', [HikcentralController::class, 'checkHikStatusPreEst'])->middleware('throttle:1000000,1');
+        Route::get('compare-hikdoc/{ci}', [HikcentralController::class, 'compararFotosHCKWithDBDOC'])->middleware('throttle:20000,1');
+        Route::get('compare-hikdoc-inv/{ci}', [HikcentralController::class, 'compararFotosHCKWithDBINV'])->middleware('throttle:20000,1');
+        Route::get('compare-hikdoc-est/{ci}', [HikcentralController::class, 'compararFotosHCKWithDBEstudiante'])->middleware('throttle:20000,1');
+        Route::get('compare-hikdoc-pre-est/{ci}', [HikcentralController::class, 'compareFotosHCKWithDBPreEstudiante'])->middleware('throttle:20000,1');
+        Route::post('sync-hikcentral/{ci}', [HikcentralController::class, 'syncToHikCentral'])->middleware('throttle:20000,1');
+        Route::post('sync-invitado-hikcentral/{ci}', [HikcentralController::class, 'syncInvitadosToHikCentral'])->middleware('throttle:20000,1');
+        Route::post('sync-hikcentral-pre-est/{ci}', [HikcentralController::class, 'syncToHikCentralPreEst'])->middleware('throttle:20000,1');
+        Route::post('sync-hikdoc/{ci}', [HikcentralController::class, 'syncToHikCentralEst'])->middleware('throttle:20000,1');
+        Route::post('sync-hikdoc-update/{ci}', [HikcentralController::class, 'syncToHikCentralUpdateEst'])->middleware('throttle:20000,1');
+        Route::post('sync-hikdoc-update-pre-est/{ci}', [HikcentralController::class, 'syncToHikCentralUpdatePreEst'])->middleware('throttle:20000,1');
+        Route::post('sync-hikdupdatedoce/{ci}', [HikcentralController::class, 'syncToHikUpdateCentral'])->middleware('throttle:20000,1'); // Estudiantes individuales
+        Route::post('sync-hikdoc-est-id/{ci}', [HikcentralController::class, 'syncToHikCentralIndvEst'])->middleware('throttle:20000,1');
+        Route::post('sync-update-invitado-hikdoc/{ci}', [HikcentralController::class, 'syncToINvHikUpdateCentral'])->middleware('throttle:20000,1'); // Invitados individuales
+        Route::post('sync-hikdoc-est-id-pre-est/{ci}', [HikcentralController::class, 'syncToHikCentralIndPreEst'])->middleware('throttle:20000,1');
+        Route::get('clear-cache/{ci}', [HikcentralController::class, 'clearDocenteCache'])->middleware('throttle:10000,1');
+        Route::get('/get-pending-sync', [HikcentralController::class, 'getPendingSync'])->middleware('throttle:10000,1');
+        Route::get('/get-pending-sync-est', [HikcentralController::class, 'getPendingSyncEst'])->middleware('throttle:10000,1');
+        Route::get('/get-pending-sync-pre-est', [HikcentralController::class, 'getPendingSyncPreEst'])->middleware('throttle:10000,1');
+        Route::get('carrerasList', [CarreraController::class, 'carrerasconsula'])->middleware('throttle:10000,1');
+
+        //Invitado Hikcentral
+        Route::apiResource("hikcentral_invitados", InvitadoHikcentralController::class);
+        Route::post('subirevidencia', [InvitadoHikcentralController::class, 'uploadArchivo']);
+        Route::post('subirfoto', [InvitadoHikcentralController::class, 'uploadFoto']);
+        Route::delete('habilitar_invitado/{id}', [InvitadoHikcentralController::class, 'habilitar']);
+        Route::delete('inhabilitar_invitado/{id}', [InvitadoHikcentralController::class, 'destroy']);
+
+        //Departamento
+        Route::get('getdepartamento', [HikcentralController::class, 'getDepartament']);
+        Route::post('adddepartamento', [HikcentralController::class, 'ADDDepartament']);
+        Route::get('getiddepartamento', [HikcentralController::class, 'GetIDDepartament']);
+
+        //Acceso
+        Route::post('addaccess', [HikcentralController::class, 'ADDAccesLevelPerson']);
+        //Eliminar persona
+        Route::post('delete-person', [HikcentralController::class, 'DELETEPersonHikcentral']);
     });
 });
