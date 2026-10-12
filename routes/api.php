@@ -61,6 +61,7 @@ Route::prefix('biometrico')->group(function () {
     Route::post('eventos-tabla-estudiantes', [HikcentralController::class, 'getTablaEventosEstudiantes']);
     Route::post('eventos-estadisticas-personal', [HikcentralController::class, 'estadisticasAccesosPersonal']);
     Route::post('eventos-tabla-personal', [HikcentralController::class, 'getTablaEventosPersonal']);
+    Route::post('estadisticas-accesos-gym', [HikcentralController::class, 'estadisticasAccesosGym']);
 
     Route::get('getperson/{ci}', [HikcentralController::class, 'checkHikStatus'])->middleware('throttle:1000000,1');
     Route::get('getperson-est/{ci}', [HikcentralController::class, 'checkHikStatusEst'])->middleware('throttle:1000000,1');

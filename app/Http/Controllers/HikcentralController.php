@@ -3561,6 +3561,138 @@ class HikcentralController extends Controller
             ], 500);
         }
     }
+    public function estadisticasAccesosGym(Request $request)
+    {
+        $beginTime = $request->input('beginTime');
+        $endTime   = $request->input('endTime');
+
+        if (!$beginTime || !$endTime) {
+            return response()->json(['success' => false, 'message' => 'Fechas inválidas'], 400);
+        }
+
+        $timezoneOffset = '-05:00';
+        $startTime     = Carbon::parse($beginTime)->startOfDay()->format('Y-m-d\TH:i:s') . $timezoneOffset;
+        $endTimeParsed = Carbon::parse($endTime)->endOfDay()->format('Y-m-d\TH:i:s') . $timezoneOffset;
+
+        // Llave de caché única para esta consulta de Gym
+        $cacheKey = "stats_accesos_gym_v1_" . md5($startTime . $endTimeParsed);
+
+        $estadisticas = Cache::remember($cacheKey, now()->addMinutes(5), function () use ($startTime, $endTimeParsed) {
+            
+            $partnerKey    = env('HIKCENTRAL_PARTNER_KEY');
+            $urlAttendance = env('HIKCENTRAL_GET_EVENTS');
+
+            $pageNo     = 1;
+            $hasMore    = true;
+            $cardNosMap = [];
+            $maxPages   = 100;
+
+            // -------------------------------------------------------------
+            // PASO 1: Obtener eventos de HikCentral (SOLO puertas del GYM)
+            // -------------------------------------------------------------
+            while ($hasMore && $pageNo <= $maxPages) {
+                $payload = [
+                    "startTime"      => $startTime,
+                    "endTime"        => $endTimeParsed,
+                    "eventType"      => 198914,
+                    "doorIndexCodes" => ["386", "387", "388", "389", "407", "412"], // Puertas filtradas
+                    "pageNo"    => $pageNo,
+                    "pageSize"  => 500,
+                    "sortField" => "SwipeTime",
+                    "orderType" => 0,
+                ];
+
+                $response = Http::withoutVerifying()->withHeaders([
+                    'x-ca-key'               => $partnerKey,
+                    'x-ca-signature'         => $this->generateSignature($urlAttendance),
+                    'x-ca-signature-headers' => 'x-ca-key',
+                    'Accept'                 => '*/*',
+                    'Content-Type'           => 'application/json'
+                ])->post($urlAttendance, $payload);
+
+                $eventosHik = $response->json();
+                $list       = $eventosHik['data']['list'] ?? [];
+
+                foreach ($list as $evento) {
+                    if (!empty($evento['cardNo'])) {
+                        $cardNo = trim($evento['cardNo']);
+                        $cardNosMap[$cardNo] = true;
+                        $cardNosMap[ltrim($cardNo, '0')] = true; 
+                    }
+                }
+
+                $totalRegistros = $eventosHik['data']['total'] ?? 0;
+                // Corregido el operador matemático de paginación
+                if (($pageNo * 500) >= $totalRegistros || empty($list)) {
+                    $hasMore = false;
+                } else {
+                    $pageNo++;
+                }
+            }
+
+            $cedulasEventos = array_keys($cardNosMap);
+
+            // -------------------------------------------------------------
+            // PASO 2: Consulta de Personal Administrativo/Docente
+            // -------------------------------------------------------------
+            $baseQueryPersonal = informacionpersonal_D::where('StatusPer', 1);
+            $totalPersonal = (clone $baseQueryPersonal)->distinct('CIInfPer')->count('CIInfPer') ?: 1;
+            
+            $conAccesoPersonal = 0;
+            if (!empty($cedulasEventos)) {
+                $conAccesoPersonal = (clone $baseQueryPersonal)
+                    ->whereIn('CIInfPer', $cedulasEventos)
+                    ->distinct('CIInfPer')
+                    ->count('CIInfPer');
+            }
+            $sinAccesoPersonal = max(0, $totalPersonal - $conAccesoPersonal);
+
+            // -------------------------------------------------------------
+            // PASO 3: Consulta de Estudiantes Matriculados
+            // -------------------------------------------------------------
+            $baseQueryEstudiantes = informacionpersonal::join('factura', 'factura.cedula', '=', 'informacionpersonal.CIInfPer')
+                ->join('detalle_matricula', 'factura.id', '=', 'detalle_matricula.idfactura')
+                ->join('carrera', 'carrera.idCarr', '=', 'detalle_matricula.idcarr')
+                ->where('factura.idper', function ($sub) {
+                    $sub->from('periodolectivo')->select('idper')->where('StatusPerLec', 1)->limit(1);
+                })
+                ->whereIn('factura.tipo_documento', ['MATRICULA', 'MATRÍCULA']);
+
+            $totalMatriculados = (clone $baseQueryEstudiantes)->distinct('informacionpersonal.CIInfPer')->count('informacionpersonal.CIInfPer') ?: 1;
+            
+            $conAccesoEstudiantes = 0;
+            if (!empty($cedulasEventos)) {
+                $conAccesoEstudiantes = (clone $baseQueryEstudiantes)
+                    ->whereIn('informacionpersonal.CIInfPer', $cedulasEventos)
+                    ->distinct('informacionpersonal.CIInfPer')
+                    ->count('informacionpersonal.CIInfPer');
+            }
+            $sinAccesoEstudiantes = max(0, $totalMatriculados - $conAccesoEstudiantes);
+
+            // Retornamos ambos grupos en el mismo payload
+            return [
+                'personal' => [
+                    'total'      => $totalPersonal,
+                    'con_acceso' => $conAccesoPersonal,
+                    'sin_acceso' => $sinAccesoPersonal,
+                ],
+                'estudiantes' => [
+                    'total'      => $totalMatriculados,
+                    'con_acceso' => $conAccesoEstudiantes,
+                    'sin_acceso' => $sinAccesoEstudiantes,
+                ],
+                'fechas_filtro'  => [
+                    'startTime_enviado' => $startTime,
+                    'endTime_enviado'   => $endTimeParsed
+                ]
+            ];
+        });
+
+        return response()->json([
+            'success' => true,
+            'data'    => $estadisticas
+        ]);
+    }
     private function clearDocenteCache($ci)
     {
         // Borramos la caché del estado y la caché del Base64
