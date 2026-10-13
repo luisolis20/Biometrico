@@ -29,18 +29,26 @@ Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
     return $request->user();
 });
 Route::prefix('biometrico')->group(function () {
-    Route::apiResource("users", UserController::class);
+    
+    //API de Uso Externo
     Route::post('login', [AuthController::class, 'login']);
     Route::get('fotografia/{ci}', [InformacionPersonalController::class, 'getFotografia2'])->middleware('throttle:10000,1');
     Route::get('fotografia-pre-est/{ci}', [InformacionPersonalController::class, 'getPreFotografia2'])->middleware('throttle:10000,1');
     Route::get('fotografiaHK/{ci}', [InformacionPersonalController::class, 'getFotografiaHC'])->middleware('throttle:10000,1');
     Route::get('fotografiadoc/{ci}', [InformacionPersonalDController::class, 'getFotografia'])->middleware('throttle:5000,1');
-    //API de Uso Externo
+    Route::get('gethick/{ci}', [HikcentralController::class, 'testPhotoBase64'])->middleware('throttle:10000,1');
+    Route::get('gethickVer', [HikcentralController::class, 'testPhotoVerfifBase64']);
+    Route::get('gethick-pre-est/{ci}', [HikcentralController::class, 'testPhotoPreEstBase64'])->middleware('throttle:10000,1');
+    Route::get('compare-hikdoc/{ci}', [HikcentralController::class, 'compararFotosHCKWithDBDOC'])->middleware('throttle:20000,1');
+    Route::get('compare-hikdoc-inv/{ci}', [HikcentralController::class, 'compararFotosHCKWithDBINV'])->middleware('throttle:20000,1');
+    Route::get('compare-hikdoc-est/{ci}', [HikcentralController::class, 'compararFotosHCKWithDBEstudiante'])->middleware('throttle:20000,1');
+    Route::get('compare-hikdoc-pre-est/{ci}', [HikcentralController::class, 'compareFotosHCKWithDBPreEstudiante'])->middleware('throttle:20000,1');
+    
     Route::get('getperson-est/{ci}', [HikcentralController::class, 'checkHikStatusEst'])->middleware('throttle:1000000,1');
     Route::post('add_level_access_gym', [HikcentralController::class, 'ADDAccesLevelGymPerson'])->middleware('throttle:20000,1');
     Route::post('remove_level_access_gym', [HikcentralController::class, 'DELETEAccesLevelGymPerson'])->middleware('throttle:20000,1');
     Route::post('eventos-puerta-asistencia', [HikcentralController::class, 'getAttendanceDoorEventsReport'])->middleware('throttle:10000,1');
-    
+
     Route::middleware('auth:api')->group(function () {
         Route::get('me', [AuthController::class, 'me']);
         Route::post('refresh', [AuthController::class, 'refresh']);
@@ -57,11 +65,9 @@ Route::prefix('biometrico')->group(function () {
         Route::get('getindivDocUTLVTE/{ci}', [InformacionPersonalDController::class, 'getPersonaUTLVTEByCI'])->middleware('throttle:5000,1');
         Route::get('getindivEst/{ci}', [InformacionPersonalController::class, 'getEstudianteByCI'])->middleware('throttle:10000,1');
         Route::get('getindivEst-pre-est/{ci}', [InformacionPersonalController::class, 'getEstudiantesPreCI'])->middleware('throttle:10000,1');
-
+        Route::apiResource("users", UserController::class);
         //API HIKCENTRAL
-        Route::get('gethick/{ci}', [HikcentralController::class, 'testPhotoBase64'])->middleware('throttle:10000,1');
-        Route::get('gethickVer', [HikcentralController::class, 'testPhotoVerfifBase64']);
-        Route::get('gethick-pre-est/{ci}', [HikcentralController::class, 'testPhotoPreEstBase64'])->middleware('throttle:10000,1');
+
         Route::get('get-periodos-rec', [PeriodoLectivoController::class, 'getActivos'])->middleware('throttle:10000,1');
         Route::get('devices', [HikcentralController::class, 'getAllAcsDevices'])->middleware('throttle:10000,1');
         Route::get('cameras', [HikcentralController::class, 'getAllEncodeDevices'])->middleware('throttle:10000,1');
@@ -85,10 +91,7 @@ Route::prefix('biometrico')->group(function () {
         Route::get('getperson/{ci}', [HikcentralController::class, 'checkHikStatus'])->middleware('throttle:1000000,1');
 
         Route::get('getperson-pre-est/{ci}', [HikcentralController::class, 'checkHikStatusPreEst'])->middleware('throttle:1000000,1');
-        Route::get('compare-hikdoc/{ci}', [HikcentralController::class, 'compararFotosHCKWithDBDOC'])->middleware('throttle:20000,1');
-        Route::get('compare-hikdoc-inv/{ci}', [HikcentralController::class, 'compararFotosHCKWithDBINV'])->middleware('throttle:20000,1');
-        Route::get('compare-hikdoc-est/{ci}', [HikcentralController::class, 'compararFotosHCKWithDBEstudiante'])->middleware('throttle:20000,1');
-        Route::get('compare-hikdoc-pre-est/{ci}', [HikcentralController::class, 'compareFotosHCKWithDBPreEstudiante'])->middleware('throttle:20000,1');
+
         Route::post('sync-hikcentral/{ci}', [HikcentralController::class, 'syncToHikCentral'])->middleware('throttle:20000,1');
         Route::post('sync-invitado-hikcentral/{ci}', [HikcentralController::class, 'syncInvitadosToHikCentral'])->middleware('throttle:20000,1');
         Route::post('sync-hikcentral-pre-est/{ci}', [HikcentralController::class, 'syncToHikCentralPreEst'])->middleware('throttle:20000,1');
