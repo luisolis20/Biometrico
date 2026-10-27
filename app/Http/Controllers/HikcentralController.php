@@ -2637,7 +2637,8 @@ class HikcentralController extends Controller
                     "375",
                     "380",
                     "444",
-                    "448"
+                    "448",
+                    "450"
                 ],
                 "pageNo"            => 1,
                 "pageSize"          => 400,
