@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\InvitadoHikcentral;
+use App\Models\informacionpersonal_D;
+use App\Models\informacionpersonal;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\File; // Importamos la clase Facultad
 use Illuminate\Support\Facades\Log; // Importamos la clase JsonResponse
@@ -11,6 +13,7 @@ use Illuminate\Support\Facades\Validator;
 use App\Models\Bitacora;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Auth;
+
 
 class InvitadoHikcentralController extends Controller
 {
@@ -132,12 +135,31 @@ class InvitadoHikcentralController extends Controller
      */
     public function show(string $id)
     {
+        $docente  = informacionpersonal_D::select('CIInfPer', 'LoginUsu', 'ClaveUsu', 'ApellInfPer', 'mailPer', 'TipoInfPer')
+            ->where('LoginUsu', $id)
+            ->where('StatusPer', 1)
+            ->first();
+        $estudiante = informacionpersonal::where('CIInfPer', $id)->first();
         $res = InvitadoHikcentral::where('cedula', $id)->first(); // Usar first() ya que cédula es única
+        
 
-        if ($res) {
+        if ($docente) {
+            return response()->json([
+                'data' => $estudiante,
+                'existe' => true,
+                'mensaje' => "El invitado ya existe registrado en la base de datos como docente",
+            ]);
+        }else if($estudiante){
+            return response()->json([
+                'data' => $estudiante,
+                'existe' => true,
+                'mensaje' => "El invitado ya existe registrado en la base de datos estudiante",
+            ]);
+
+        }else if($res){
             return response()->json([
                 'data' => $res,
-                'mensaje' => "Encontrado con Éxito!!",
+                'mensaje' => "Encontrado con exito",
             ]);
         } else {
             return response()->json([
@@ -216,7 +238,7 @@ class InvitadoHikcentralController extends Controller
     /**
      * Remove the specified resource from storage.
      */
-    public function destroy(Request $request,string $id)
+    public function destroy(Request $request, string $id)
     {
         $res = InvitadoHikcentral::find($id);
         if (isset($res)) {
