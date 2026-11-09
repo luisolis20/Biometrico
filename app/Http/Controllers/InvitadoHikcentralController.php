@@ -135,19 +135,18 @@ class InvitadoHikcentralController extends Controller
      */
     public function show(string $id)
     {
-        $docente  = informacionpersonal_D::select('CIInfPer', 'LoginUsu', 'ClaveUsu', 'ApellInfPer', 'mailPer', 'TipoInfPer')
-            ->where('LoginUsu', $id)
-            ->where('StatusPer', 1)
+        $docente  = informacionpersonal_D::select('CIInfPer')
+            ->where('CIInfPer', $id)
             ->first();
-        $estudiante = informacionpersonal::where('CIInfPer', $id)->first();
+        $estudiante = informacionpersonal::select('CIInfPer')
+        ->where('CIInfPer', $id)->first();
         $res = InvitadoHikcentral::where('cedula', $id)->first(); // Usar first() ya que cédula es única
         
-
         if ($docente) {
             return response()->json([
-                'data' => $estudiante,
+                'data' => $docente,
                 'existe' => true,
-                'mensaje' => "El invitado ya existe registrado en la base de datos como docente",
+                'mensaje' => "El invitado ya existe registrado en la base de datos",
             ]);
         }else if($estudiante){
             return response()->json([
